@@ -83,9 +83,9 @@ jobs:
         mkdir -p files/etc/config
         cp ../etc/config/network files/etc/config/network
         
-        # 复制密码配置文件
+        # 复制密码配置文件（修正路径：etc/config/shadow）
         mkdir -p files/etc
-        cp ../etc/shadow files/etc/shadow
+        cp ../etc/config/shadow files/etc/shadow
         
         echo "Config files copied successfully:"
         echo "  - .config"
