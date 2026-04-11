@@ -1,17 +1,6 @@
 name: Build ImmortalWrt for Nokia XG-140G-MD
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-      - master
-      - release
-      - staging
-      - production
-    paths:
-      - 'config/.config'
-      - '.github/workflows/Nokia.yml'
   workflow_dispatch:
 
 jobs:
@@ -80,25 +69,6 @@ jobs:
           cd immortalwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: Prepare logs directory
-        if: always()
-        run: |
-          cd immortalwrt
-          mkdir -p logs
-
-      - name: Get firmware name
-        run: |
-          cd immortalwrt
-          FIRMWARE_DIR="bin/targets/airoha/an7581"
-          if [ -d "$FIRMWARE_DIR" ]; then
-            FIRMWARE=$(ls $FIRMWARE_DIR | grep -E 'sysupgrade\.bin$|factory\.bin$' | head -1)
-            if [ -n "$FIRMWARE" ]; then
-              echo "FIRMWARE=$FIRMWARE" >> $GITHUB_ENV
-              echo "FIRMWARE_PATH=$FIRMWARE_DIR/$FIRMWARE" >> $GITHUB_ENV
-              echo "Found firmware: $FIRMWARE"
-            fi
-          fi
-
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -106,37 +76,12 @@ jobs:
           path: |
             immortalwrt/bin/targets/airoha/an7581/*.sysupgrade.bin
             immortalwrt/bin/targets/airoha/an7581/*.factory.bin
-            immortalwrt/bin/targets/airoha/an7581/*.bin
-            immortalwrt/bin/targets/airoha/an7581/*.manifest
           retention-days: 30
-
-      - name: Generate download summary
-        if: success()
-        run: |
-          echo "## 📦 ImmortalWrt 固件下载" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 固件类型 | 文件名 | 大小 |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|------|" >> $GITHUB_STEP_SUMMARY
-          
-          cd immortalwrt/bin/targets/airoha/an7581/ 2>/dev/null || exit 0
-          
-          for file in *.sysupgrade.bin *.factory.bin; do
-            if [ -f "$file" ]; then
-              SIZE=$(du -h "$file" | cut -f1)
-              echo "| sysupgrade | \`$file\` | $SIZE |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 下载链接" >> $GITHUB_STEP_SUMMARY
-          echo "- [📁 点击下载固件](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload build logs (if failed)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_number }}
-          path: |
-            immortalwrt/logs/
-            immortalwrt/.config
+          path: immortalwrt/logs/
           retention-days: 7
