@@ -90,7 +90,7 @@ jobs:
         echo "Config files copied successfully:"
         echo "  - .config"
         echo "  - files/etc/config/network"
-        echo "  - files/etc/shadow"
+        echo "  - files/etc/config/shadow"
 
     - name: Update feeds
       run: |
