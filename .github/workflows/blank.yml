@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
+    paths:
+      - '.github/workflows/**'
+      - '**.yml'
+      - '**.yaml'
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
 
 jobs:
   build:
@@ -65,22 +72,24 @@ jobs:
         cd immortalwrt
         git checkout openwrt-24.10
 
-    - name: Create custom config files (network + password)
+    - name: Create custom config files
       run: |
         cd immortalwrt
         mkdir -p files/etc/config
         mkdir -p files/etc
-        # 网络配置：WAN 在 eth0 (2.5G口)，LAN 在 eth1 eth2 (千兆口)
-        cat > files/etc/config/network << "EOF"
+        cat > files/etc/config/network << "EOL"
         config interface 'loopback'
             option ifname 'lo'
             option proto 'static'
             option ipaddr '127.0.0.1'
             option netmask '255.0.0.0'
 
+        config globals 'globals'
+            option ula_prefix 'fd00:abcd::/48'
+
         config interface 'lan'
             option type 'bridge'
-            option ifname 'eth1 eth2'
+            option ifname 'eth1 eth2 eth3'
             option proto 'static'
             option ipaddr '192.168.1.1'
             option netmask '255.255.255.0'
@@ -93,17 +102,16 @@ jobs:
         config interface 'wan6'
             option ifname 'eth0'
             option proto 'dhcpv6'
-        EOF
+        EOL
         
-        # 设置 root 密码为 "password"
-        # 使用 openssl passwd -1 "password" 生成的加密串
-        cat > files/etc/shadow << "EOF"
-root:$1$abc123$wD7s7bZjKZXiUqQvH9xJz/:19000:0:99999:7:::
-daemon:*:0:0:99999:7:::
-ftp:*:0:0:99999:7:::
-network:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
+        cat > files/etc/shadow << "EOL"
+        root:$1$abc123$wD7s7bZjKZXiUqQvH9xJz/:19000:0:99999:7:::
+        daemon:*:0:0:99999:7:::
+        ftp:*:0:0:99999:7:::
+        network:*:0:0:99999:7:::
+        nobody:*:0:0:99999:7:::
+        EOL
+        
         echo "Custom network config and root password have been set."
 
     - name: Update feeds
@@ -115,7 +123,7 @@ EOF
     - name: Generate full .config
       run: |
         cd immortalwrt
-        cat > .config << "EOF"
+        cat > .config << "EOL"
         # ===================== 设备目标 =====================
         CONFIG_TARGET_airoha=y
         CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-140g-md=y
@@ -249,7 +257,7 @@ EOF
         CONFIG_PACKAGE_tcpdump=y
         CONFIG_PACKAGE_iperf3=y
         CONFIG_PACKAGE_mii-tool=y
-        EOF
+        EOL
 
     - name: Update config
       run: |
