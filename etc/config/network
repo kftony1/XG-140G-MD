@@ -5,23 +5,20 @@ config interface 'loopback'
     option netmask '255.0.0.0'
 
 config globals 'globals'
-    option ula_prefix 'fd00:1234::/48'
+    option ula_prefix 'fd00:abcd::/48'
 
-# LAN 桥接：2.5G 口 + 三个千兆口（全部作为 LAN）
 config interface 'lan'
     option type 'bridge'
-    option ifname 'eth0 eth1 eth2 eth3'   # 根据实际接口名调整
+    option ifname 'eth1 eth2 eth3'
     option proto 'static'
     option ipaddr '192.168.1.1'
     option netmask '255.255.255.0'
     option ip6assign '60'
 
-# WAN 口：10G XG-PON 光纤口（假设为 eth4）
 config interface 'wan'
-    option ifname 'eth4'
+    option ifname 'eth0'
     option proto 'dhcp'
 
-# IPv6 WAN 口
 config interface 'wan6'
-    option ifname 'eth4'
+    option ifname 'eth0'
     option proto 'dhcpv6'
