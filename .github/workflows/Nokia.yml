@@ -30,8 +30,6 @@ jobs:
       - name: Build environment setup
         run: |
           sudo apt update
-          # ImmortalWrt 官方推荐的编译依赖
-          # 参考: https://github.com/immortalwrt/immortalwrt
           sudo apt install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
             python3-distutils python3-setuptools rsync swig unzip zlib1g-dev \
@@ -39,12 +37,18 @@ jobs:
 
       - name: Clone ImmortalWrt
         run: |
-          # 克隆 ImmortalWrt 官方仓库（使用主分支）
           git clone https://github.com/immortalwrt/immortalwrt.git immortalwrt
 
       - name: Copy .config to ImmortalWrt
         run: |
           cp config/.config immortalwrt/.config
+
+      - name: Copy custom config files
+        run: |
+          mkdir -p immortalwrt/package/base-files/files/etc/config
+          [ -f "etc/config/network" ] && cp etc/config/network immortalwrt/package/base-files/files/etc/config/
+          [ -f "etc/config/shadow" ] && cp etc/config/shadow immortalwrt/package/base-files/files/etc/config/
+          [ -f "network" ] && cp network immortalwrt/package/base-files/files/etc/
 
       - name: Update feeds
         run: |
@@ -111,15 +115,15 @@ jobs:
         run: |
           echo "## 📦 ImmortalWrt 固件下载" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 固件类型 | 文件名 |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 固件类型 | 文件名 | 大小 |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|------|" >> $GITHUB_STEP_SUMMARY
           
           cd immortalwrt/bin/targets/airoha/an7581/ 2>/dev/null || exit 0
           
           for file in *.sysupgrade.bin *.factory.bin; do
             if [ -f "$file" ]; then
               SIZE=$(du -h "$file" | cut -f1)
-              echo "| sysupgrade | \`$file\` ($SIZE) |" >> $GITHUB_STEP_SUMMARY
+              echo "| sysupgrade | \`$file\` | $SIZE |" >> $GITHUB_STEP_SUMMARY
             fi
           done
           
