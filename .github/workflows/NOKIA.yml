@@ -83,7 +83,7 @@ jobs:
         mkdir -p files/etc/config
         cp ../etc/config/network files/etc/config/network
         
-        # 复制密码配置文件（修正路径：etc/config/shadow）
+        # 复制密码配置文件
         mkdir -p files/etc
         cp ../etc/config/shadow files/etc/shadow
         
@@ -95,26 +95,26 @@ jobs:
     - name: Update feeds
       run: |
         cd immortalwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        ./scripts/feeds update -a 2>&1 | tee feeds_update.log
+        ./scripts/feeds install -a 2>&1 | tee -a feeds_update.log
 
     - name: Update config
       run: |
         cd immortalwrt
-        make defconfig
-        make oldconfig
+        make defconfig 2>&1 | tee defconfig.log
+        make oldconfig 2>&1 | tee -a defconfig.log
 
     - name: Download sources
       run: |
         cd immortalwrt
-        make download -j4
+        make download -j4 2>&1 | tee download.log
 
     - name: Build firmware
       run: |
         cd immortalwrt
-        make -j$(nproc) V=s 2>&1 | tee build.log
+        make -j$(nproc) 2>&1 | tee build.log
 
-    - name: Upload firmware
+    - name: Upload firmware and logs
       uses: actions/upload-artifact@v4
       with:
         name: immortalwrt-an7581-firmware
@@ -122,5 +122,8 @@ jobs:
           immortalwrt/bin/targets/airoha/an7581/*.bin
           immortalwrt/bin/targets/airoha/an7581/*.img
           immortalwrt/bin/targets/airoha/an7581/*.tar.gz
+          immortalwrt/feeds_update.log
+          immortalwrt/defconfig.log
+          immortalwrt/download.log
           immortalwrt/build.log
         retention-days: 7
