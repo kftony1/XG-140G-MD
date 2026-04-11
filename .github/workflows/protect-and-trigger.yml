@@ -1,0 +1,80 @@
+# 🔒 禁止修改配置文件 + 违规自动触发第一个YML脚本（单文件版）
+name: 配置文件保护 & 违规自动执行脚本
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # 第一步：禁止修改/新建配置文件
+  protect-config:
+    runs-on: ubuntu-latest
+    outputs:
+      is_violation: ${{ steps.check-violation.outputs.violation }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查是否违规修改配置文件
+        id: check-violation
+        run: |
+          VIOLATION="false"
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD || true)
+
+          # 禁止的文件类型
+          FORBIDDEN=(
+            "*.yml"
+            "*.yaml"
+            "*.config"
+            "config/*"
+            "**/*.yml"
+            "**/*.yaml"
+          )
+
+          for FILE in $CHANGED_FILES; do
+            for PAT in "${FORBIDDEN[@]}"; do
+              if [[ "$FILE" == $PAT ]]; then
+                echo "❌ 违规文件：$FILE"
+                VIOLATION="true"
+              fi
+            done
+          done
+
+          echo "violation=$VIOLATION" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATION" == "true" ]; then
+            echo "❌ 禁止修改/新建任何 .yml / .yaml / config 文件！"
+            exit 1
+          else
+            echo "✅ 本次提交合规"
+          fi
+
+  # 第二步：如果违规 → 自动执行仓库第一个YML脚本
+  run-first-yml:
+    needs: protect-config
+    if: ${{ needs.protect-config.outputs.is_violation == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 找到并执行第一个YML脚本
+        run: |
+          FIRST_YML=$(find . -name "*.yml" -o -name "*.yaml" | grep -v '.git' | head -n 1)
+          
+          if [ -z "$FIRST_YML" ]; then
+            echo "❌ 未找到任何YML脚本"
+            exit 1
+          fi
+
+          echo "✅ 找到第一个脚本：$FIRST_YML"
+          echo "🚀 自动执行中..."
+
+          # 触发 GitHub Action 运行
+          gh workflow run "$FIRST_YML" --ref $GITHUB_REF_NAME
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
