@@ -1,0 +1,67 @@
+name: Monitor Config Changes
+
+on:
+  push:
+    paths:
+      - '**.config'
+      - '**.yml'
+      - '**.yaml'
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+jobs:
+  detect-and-trigger:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          
+      - name: Get changed files
+        id: changed
+        run: |
+          echo "CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep -E '\.(config|yml|yaml)$' | tr '\n' ',')" >> $GITHUB_OUTPUT
+          
+      - name: Find first YML file
+        id: find_first
+        run: |
+          # 查找仓库中第一个 .yml 或 .yaml 文件（排除 monitor.yml 自身）
+          FIRST_YML=$(find .github/workflows -name "*.yml" -o -name "*.yaml" | grep -v "monitor.yml" | sort | head -1 | xargs basename)
+          if [ -z "$FIRST_YML" ]; then
+            echo "No workflow files found"
+            exit 1
+          fi
+          echo "first_workflow=$FIRST_YML" >> $GITHUB_OUTPUT
+          echo "Found workflow: $FIRST_YML"
+          
+      - name: Trigger workflow
+        if: steps.changed.outputs.CHANGED_FILES != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflow = '${{ steps.find_first.outputs.first_workflow }}';
+            const changedFiles = '${{ steps.changed.outputs.CHANGED_FILES }}';
+            
+            console.log(`Changed files: ${changedFiles}`);
+            console.log(`Triggering workflow: ${workflow}`);
+            
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflow,
+              ref: context.ref,
+              inputs: {
+                triggered_by: 'config_or_yml_change',
+                changed_files: changedFiles
+              }
+            });
+            
+            console.log(`✅ Triggered ${workflow} successfully`);
