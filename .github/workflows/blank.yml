@@ -1,0 +1,279 @@
+name: Build ImmortalWrt for Nokia XG-140G-MD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+        df -h
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+          python3-distutils python3-setuptools rsync swig unzip zlib1g-dev \
+          file wget time patch libelf-dev bc subversion
+
+    - name: Cache ImmortalWrt source
+      uses: actions/cache@v4
+      id: cache-source
+      with:
+        path: immortalwrt
+        key: ${{ runner.os }}-immortalwrt-source-${{ hashFiles('immortalwrt/.git/HEAD') }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-source-
+
+    - name: Cache downloads
+      uses: actions/cache@v4
+      id: cache-downloads
+      with:
+        path: immortalwrt/dl
+        key: ${{ runner.os }}-immortalwrt-dl-${{ hashFiles('immortalwrt/dl/*') }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-dl-
+
+    - name: Cache build artifacts
+      uses: actions/cache@v4
+      id: cache-build
+      with:
+        path: |
+          immortalwrt/build_dir
+          immortalwrt/staging_dir
+          immortalwrt/tmp
+        key: ${{ runner.os }}-immortalwrt-build-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-immortalwrt-build-
+
+    - name: Clone ImmortalWrt source
+      if: steps.cache-source.outputs.cache-hit != 'true'
+      run: |
+        git clone https://github.com/immortalwrt/immortalwrt.git
+        cd immortalwrt
+        git checkout openwrt-24.10
+
+    - name: Create custom config files (network + password)
+      run: |
+        cd immortalwrt
+        mkdir -p files/etc/config
+        mkdir -p files/etc
+        # 网络配置：WAN 在 eth0 (2.5G口)，LAN 在 eth1 eth2 (千兆口)
+        cat > files/etc/config/network << "EOF"
+        config interface 'loopback'
+            option ifname 'lo'
+            option proto 'static'
+            option ipaddr '127.0.0.1'
+            option netmask '255.0.0.0'
+
+        config interface 'lan'
+            option type 'bridge'
+            option ifname 'eth1 eth2'
+            option proto 'static'
+            option ipaddr '192.168.1.1'
+            option netmask '255.255.255.0'
+            option ip6assign '60'
+
+        config interface 'wan'
+            option ifname 'eth0'
+            option proto 'dhcp'
+
+        config interface 'wan6'
+            option ifname 'eth0'
+            option proto 'dhcpv6'
+        EOF
+        
+        # 设置 root 密码为 "password"
+        # 使用 openssl passwd -1 "password" 生成的加密串
+        cat > files/etc/shadow << "EOF"
+root:$1$abc123$wD7s7bZjKZXiUqQvH9xJz/:19000:0:99999:7:::
+daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+network:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+EOF
+        echo "Custom network config and root password have been set."
+
+    - name: Update feeds
+      run: |
+        cd immortalwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Generate full .config
+      run: |
+        cd immortalwrt
+        cat > .config << "EOF"
+        # ===================== 设备目标 =====================
+        CONFIG_TARGET_airoha=y
+        CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-140g-md=y
+        CONFIG_TARGET_ROOTFS_PARTSIZE=512
+
+        # ===================== LuCI 中文界面 =====================
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-mod-status=y
+        CONFIG_PACKAGE_luci-mod-system=y
+        CONFIG_PACKAGE_luci-mod-network=y
+        CONFIG_PACKAGE_luci-mod-admin-full=y
+        CONFIG_LUCI_LANG_zh_Hans=y
+
+        # ===================== LuCI 扩展 =====================
+        CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_PACKAGE_luci-app-argon-config=y
+        CONFIG_PACKAGE_luci-app-opkg=y
+        CONFIG_PACKAGE_luci-app-filetransfer=y
+        CONFIG_PACKAGE_luci-app-ttyd=y
+        CONFIG_PACKAGE_luci-app-firewall=y
+        CONFIG_PACKAGE_luci-app-store=y
+        CONFIG_PACKAGE_luci-app-store_home=y
+        CONFIG_PACKAGE_luci-compat=y
+
+        # ===================== 网络向导 =====================
+        CONFIG_PACKAGE_luci-app-quickstart=y
+        CONFIG_PACKAGE_luci-app-wizard=y
+
+        # ===================== 有线 Mesh 支持 =====================
+        CONFIG_PACKAGE_wpad-mesh-mbedtls=y
+        CONFIG_PACKAGE_wpad-basic-mbedtls=n
+        CONFIG_PACKAGE_kmod-batman-adv=y
+        CONFIG_PACKAGE_batctl=y
+        CONFIG_PACKAGE_luci-app-easymesh=y
+        CONFIG_PACKAGE_mesh11sd=y
+        CONFIG_PACKAGE_hostapd-common=y
+        CONFIG_PACKAGE_hostapd-openssl=y
+        CONFIG_PACKAGE_dawn=y
+        CONFIG_PACKAGE_luci-app-dawn=y
+
+        # ===================== 看门狗支持 =====================
+        CONFIG_PACKAGE_kmod-wdt-airoha=y
+        CONFIG_PROCD_WATCHDOG=y
+        CONFIG_WATCHDOG=y
+        CONFIG_WATCHDOG_CORE=y
+        CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
+
+        # ===================== AN7581 核心驱动 =====================
+        CONFIG_PACKAGE_kmod-an7581=y
+        CONFIG_PACKAGE_kmod-phy-en8811h=y
+        CONFIG_PACKAGE_airoha-en8811h-firmware=y
+        CONFIG_PACKAGE_kmod-fm25=y
+        CONFIG_PACKAGE_kmod-spi-nor=y
+        CONFIG_PACKAGE_kmod-spi-airoha-snfi=y
+        CONFIG_PACKAGE_kmod-thermal-airoha=y
+        CONFIG_PACKAGE_kmod-leds-airoha=y
+        CONFIG_PACKAGE_kmod-hwmon-airoha=y
+        CONFIG_PACKAGE_airoha-ppefw=y
+        CONFIG_PACKAGE_kmod-soc-airoha-scu-ssr=y
+        CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
+        CONFIG_PACKAGE_kmod-reset-ath79=y
+        CONFIG_PACKAGE_kmod-airoha-eth=y
+        CONFIG_PACKAGE_kmod-airoha-npu=y
+        CONFIG_PACKAGE_airoha-npu-firmware=y
+        CONFIG_PACKAGE_kmod-airoha-switch=y
+        CONFIG_PACKAGE_kmod-cpufreq-en7581=y
+        CONFIG_PACKAGE_kmod-pcie-airoha=y
+
+        # ===================== USB 支持 =====================
+        CONFIG_PACKAGE_kmod-usb2=y
+        CONFIG_PACKAGE_kmod-usb3=y
+        CONFIG_PACKAGE_kmod-usb-storage=y
+        CONFIG_PACKAGE_kmod-usb-ehci=y
+        CONFIG_PACKAGE_kmod-phy-airoha-usb=y
+
+        # ===================== KSMBD 文件共享 =====================
+        CONFIG_PACKAGE_kmod-ksmbd=y
+        CONFIG_PACKAGE_luci-app-ksmbd=y
+
+        # ===================== Flash 与 MTD =====================
+        CONFIG_KERNEL_MTD=y
+        CONFIG_KERNEL_MTD_PARTS=y
+        CONFIG_KERNEL_MTD_BLOCK=y
+        CONFIG_KERNEL_MTD_CHAR=y
+        CONFIG_KERNEL_MTD_SPI_NOR=y
+        CONFIG_KERNEL_SPI_MASTER=y
+        CONFIG_PACKAGE_kmod-mtd-spi-nand=y
+        CONFIG_PACKAGE_mtd-utils=y
+        CONFIG_PACKAGE_ubi-utils=y
+
+        # ===================== 网络基础内核支持 =====================
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_dnsmasq-full=y
+        CONFIG_PACKAGE_chrony=y
+
+        # ===================== 网络加速 =====================
+        CONFIG_PACKAGE_kmod-ipt-fullconenat=y
+        CONFIG_PACKAGE_kmod-ipt-offload=y
+        CONFIG_PACKAGE_kmod-nf-flow=y
+        CONFIG_PACKAGE_kmod-nft-offload=y
+        CONFIG_PACKAGE_irqbalance=y
+        CONFIG_PACKAGE_ethtool=y
+        CONFIG_KERNEL_NFT_FLOW_OFFLOAD=y
+
+        # ===================== TCP 优化 =====================
+        CONFIG_KERNEL_TCP_CONG_BBR=y
+        CONFIG_KERNEL_DEFAULT_TCP_CONG="bbr"
+
+        # ===================== 科学上网内核依赖 =====================
+        CONFIG_PACKAGE_kmod-tun=y
+        CONFIG_PACKAGE_iptables-mod-tproxy=y
+        CONFIG_PACKAGE_kmod-nft-tproxy=y
+
+        # ===================== VLAN / 桥接支持 =====================
+        CONFIG_PACKAGE_kmod-8021q=y
+        CONFIG_PACKAGE_kmod-bridge=y
+        CONFIG_PACKAGE_kmod-br-netfilter=y
+
+        # ===================== 内核网络选项 =====================
+        CONFIG_KERNEL_NET_SWITCHDEV=y
+        CONFIG_KERNEL_IPV6=y
+        CONFIG_KERNEL_BRIDGE_VLAN_FILTERING=y
+
+        # ===================== 系统优化 =====================
+        CONFIG_CCACHE=y
+        CONFIG_STRIP_KERNEL_EXPORTS=y
+        CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256k
+
+        # ===================== 调试工具 =====================
+        CONFIG_PACKAGE_tcpdump=y
+        CONFIG_PACKAGE_iperf3=y
+        CONFIG_PACKAGE_mii-tool=y
+        EOF
+
+    - name: Update config
+      run: |
+        cd immortalwrt
+        make defconfig
+        make oldconfig
+
+    - name: Download sources
+      run: |
+        cd immortalwrt
+        make download -j4
+
+    - name: Build firmware
+      run: |
+        cd immortalwrt
+        make -j$(nproc) V=s 2>&1 | tee build.log
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: immortalwrt-an7581-firmware
+        path: |
+          immortalwrt/bin/targets/airoha/an7581/*.bin
+          immortalwrt/bin/targets/airoha/an7581/*.img
+          immortalwrt/bin/targets/airoha/an7581/*.tar.gz
+          immortalwrt/build.log
+        retention-days: 7
