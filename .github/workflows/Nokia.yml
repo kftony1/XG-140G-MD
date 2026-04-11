@@ -27,6 +27,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: DEBUG - List all files
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Full file list ==="
+          ls -la
+          echo "=== config directory ==="
+          ls -la config/ || echo "config/ not found"
+          echo "=== Find .config anywhere ==="
+          find . -name ".config" -type f
+          echo "=== Find config files ==="
+          find . -name "*.config" -type f
+
       - name: Build environment setup
         run: |
           sudo apt update
@@ -41,8 +54,29 @@ jobs:
 
       - name: Copy .config to OpenWrt
         run: |
-          # 从仓库的 config/ 目录复制 .config 到 OpenWrt 根目录
-          cp config/.config openwrt/.config
+          echo "=== Current directory before copy ==="
+          pwd
+          ls -la
+          
+          # 尝试多种可能的路径
+          if [ -f "config/.config" ]; then
+            echo "Found config/.config"
+            cp config/.config openwrt/.config
+          elif [ -f ".config" ]; then
+            echo "Found .config in root"
+            cp .config openwrt/.config
+          elif [ -f "../config/.config" ]; then
+            echo "Found ../config/.config"
+            cp ../config/.config openwrt/.config
+          else
+            echo "ERROR: .config file not found!"
+            echo "Searching in parent directory..."
+            find .. -name ".config" -type f 2>/dev/null || echo "No .config found"
+            exit 1
+          fi
+          
+          echo "=== Verify copy ==="
+          ls -la openwrt/.config
 
       - name: Update feeds
         run: |
@@ -74,30 +108,6 @@ jobs:
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: Prepare logs directory
-        if: always()
-        run: |
-          cd openwrt
-          mkdir -p logs
-
-      - name: Get firmware name
-        run: |
-          cd openwrt
-          FIRMWARE_DIR="bin/targets/airoha/an7581"
-          if [ -d "$FIRMWARE_DIR" ]; then
-            FIRMWARE=$(ls $FIRMWARE_DIR | grep -E 'sysupgrade\.bin$|factory\.bin$' | head -1)
-            if [ -n "$FIRMWARE" ]; then
-              echo "FIRMWARE=$FIRMWARE" >> $GITHUB_ENV
-              echo "FIRMWARE_PATH=$FIRMWARE_DIR/$FIRMWARE" >> $GITHUB_ENV
-              echo "Found firmware: $FIRMWARE"
-            else
-              echo "No firmware found"
-              ls -la $FIRMWARE_DIR
-            fi
-          else
-            echo "Firmware directory not found"
-          fi
-
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -105,36 +115,12 @@ jobs:
           path: |
             openwrt/bin/targets/airoha/an7581/*.sysupgrade.bin
             openwrt/bin/targets/airoha/an7581/*.factory.bin
-            openwrt/bin/targets/airoha/an7581/*.bin
-            openwrt/bin/targets/airoha/an7581/*.manifest
           retention-days: 30
-
-      - name: Generate download summary
-        if: success()
-        run: |
-          echo "## 📦 固件下载" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 固件类型 | 文件名 |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          
-          cd openwrt/bin/targets/airoha/an7581/ 2>/dev/null || exit 0
-          
-          for file in *.sysupgrade.bin *.factory.bin; do
-            if [ -f "$file" ]; then
-              echo "| sysupgrade | \`$file\` |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 下载链接" >> $GITHUB_STEP_SUMMARY
-          echo "- [📁 查看所有产物](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload build logs (if failed)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_number }}
-          path: |
-            openwrt/logs/
-            openwrt/.config
+          path: openwrt/logs/
           retention-days: 7
