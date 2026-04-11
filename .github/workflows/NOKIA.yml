@@ -8,6 +8,8 @@ on:
       - '.github/workflows/**'
       - '**.yml'
       - '**.yaml'
+      - 'config/**'
+      - 'etc/**'
 
 jobs:
   build:
@@ -32,6 +34,7 @@ jobs:
           python3-distutils python3-setuptools rsync swig unzip zlib1g-dev \
           file wget time patch libelf-dev bc subversion
 
+    # ==================== 缓存配置 ====================
     - name: Cache ImmortalWrt source
       uses: actions/cache@v4
       id: cache-source
@@ -69,192 +72,31 @@ jobs:
         cd immortalwrt
         git checkout openwrt-24.10
 
-    - name: Create custom config files
+    - name: Copy config files from repository
       run: |
         cd immortalwrt
+        
+        # 复制 .config 编译配置文件
+        cp ../config/.config ./.config
+        
+        # 复制网口配置文件
         mkdir -p files/etc/config
+        cp ../etc/config/network files/etc/config/network
+        
+        # 复制密码配置文件
         mkdir -p files/etc
-        cat > files/etc/config/network << "EOL"
-        config interface 'loopback'
-            option ifname 'lo'
-            option proto 'static'
-            option ipaddr '127.0.0.1'
-            option netmask '255.0.0.0'
-
-        config globals 'globals'
-            option ula_prefix 'fd00:abcd::/48'
-
-        config interface 'lan'
-            option type 'bridge'
-            option ifname 'eth1 eth2 eth3'
-            option proto 'static'
-            option ipaddr '192.168.1.1'
-            option netmask '255.255.255.0'
-            option ip6assign '60'
-
-        config interface 'wan'
-            option ifname 'eth0'
-            option proto 'dhcp'
-
-        config interface 'wan6'
-            option ifname 'eth0'
-            option proto 'dhcpv6'
-        EOL
+        cp ../etc/shadow files/etc/shadow
         
-        cat > files/etc/shadow << "EOL"
-        root:$1$abc123$wD7s7bZjKZXiUqQvH9xJz/:19000:0:99999:7:::
-        daemon:*:0:0:99999:7:::
-        ftp:*:0:0:99999:7:::
-        network:*:0:0:99999:7:::
-        nobody:*:0:0:99999:7:::
-        EOL
-        
-        echo "Custom network config and root password have been set."
+        echo "Config files copied successfully:"
+        echo "  - .config"
+        echo "  - files/etc/config/network"
+        echo "  - files/etc/shadow"
 
     - name: Update feeds
       run: |
         cd immortalwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-
-    - name: Generate full .config
-      run: |
-        cd immortalwrt
-        cat > .config << "EOL"
-        # ===================== 设备目标 =====================
-        CONFIG_TARGET_airoha=y
-        CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-140g-md=y
-        CONFIG_TARGET_ROOTFS_PARTSIZE=512
-
-        # ===================== LuCI 中文界面 =====================
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-base=y
-        CONFIG_PACKAGE_luci-mod-status=y
-        CONFIG_PACKAGE_luci-mod-system=y
-        CONFIG_PACKAGE_luci-mod-network=y
-        CONFIG_PACKAGE_luci-mod-admin-full=y
-        CONFIG_LUCI_LANG_zh_Hans=y
-
-        # ===================== LuCI 扩展 =====================
-        CONFIG_PACKAGE_luci-theme-argon=y
-        CONFIG_PACKAGE_luci-app-argon-config=y
-        CONFIG_PACKAGE_luci-app-opkg=y
-        CONFIG_PACKAGE_luci-app-filetransfer=y
-        CONFIG_PACKAGE_luci-app-ttyd=y
-        CONFIG_PACKAGE_luci-app-firewall=y
-        CONFIG_PACKAGE_luci-app-store=y
-        CONFIG_PACKAGE_luci-app-store_home=y
-        CONFIG_PACKAGE_luci-compat=y
-
-        # ===================== 网络向导 =====================
-        CONFIG_PACKAGE_luci-app-quickstart=y
-        CONFIG_PACKAGE_luci-app-wizard=y
-
-        # ===================== 有线 Mesh 支持 =====================
-        CONFIG_PACKAGE_wpad-mesh-mbedtls=y
-        CONFIG_PACKAGE_wpad-basic-mbedtls=n
-        CONFIG_PACKAGE_kmod-batman-adv=y
-        CONFIG_PACKAGE_batctl=y
-        CONFIG_PACKAGE_luci-app-easymesh=y
-        CONFIG_PACKAGE_mesh11sd=y
-        CONFIG_PACKAGE_hostapd-common=y
-        CONFIG_PACKAGE_hostapd-openssl=y
-        CONFIG_PACKAGE_dawn=y
-        CONFIG_PACKAGE_luci-app-dawn=y
-
-        # ===================== 看门狗支持 =====================
-        CONFIG_PACKAGE_kmod-wdt-airoha=y
-        CONFIG_PROCD_WATCHDOG=y
-        CONFIG_WATCHDOG=y
-        CONFIG_WATCHDOG_CORE=y
-        CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
-
-        # ===================== AN7581 核心驱动 =====================
-        CONFIG_PACKAGE_kmod-an7581=y
-        CONFIG_PACKAGE_kmod-phy-en8811h=y
-        CONFIG_PACKAGE_airoha-en8811h-firmware=y
-        CONFIG_PACKAGE_kmod-fm25=y
-        CONFIG_PACKAGE_kmod-spi-nor=y
-        CONFIG_PACKAGE_kmod-spi-airoha-snfi=y
-        CONFIG_PACKAGE_kmod-thermal-airoha=y
-        CONFIG_PACKAGE_kmod-leds-airoha=y
-        CONFIG_PACKAGE_kmod-hwmon-airoha=y
-        CONFIG_PACKAGE_airoha-ppefw=y
-        CONFIG_PACKAGE_kmod-soc-airoha-scu-ssr=y
-        CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
-        CONFIG_PACKAGE_kmod-reset-ath79=y
-        CONFIG_PACKAGE_kmod-airoha-eth=y
-        CONFIG_PACKAGE_kmod-airoha-npu=y
-        CONFIG_PACKAGE_airoha-npu-firmware=y
-        CONFIG_PACKAGE_kmod-airoha-switch=y
-        CONFIG_PACKAGE_kmod-cpufreq-en7581=y
-        CONFIG_PACKAGE_kmod-pcie-airoha=y
-
-        # ===================== USB 支持 =====================
-        CONFIG_PACKAGE_kmod-usb2=y
-        CONFIG_PACKAGE_kmod-usb3=y
-        CONFIG_PACKAGE_kmod-usb-storage=y
-        CONFIG_PACKAGE_kmod-usb-ehci=y
-        CONFIG_PACKAGE_kmod-phy-airoha-usb=y
-
-        # ===================== KSMBD 文件共享 =====================
-        CONFIG_PACKAGE_kmod-ksmbd=y
-        CONFIG_PACKAGE_luci-app-ksmbd=y
-
-        # ===================== Flash 与 MTD =====================
-        CONFIG_KERNEL_MTD=y
-        CONFIG_KERNEL_MTD_PARTS=y
-        CONFIG_KERNEL_MTD_BLOCK=y
-        CONFIG_KERNEL_MTD_CHAR=y
-        CONFIG_KERNEL_MTD_SPI_NOR=y
-        CONFIG_KERNEL_SPI_MASTER=y
-        CONFIG_PACKAGE_kmod-mtd-spi-nand=y
-        CONFIG_PACKAGE_mtd-utils=y
-        CONFIG_PACKAGE_ubi-utils=y
-
-        # ===================== 网络基础内核支持 =====================
-        CONFIG_PACKAGE_firewall4=y
-        CONFIG_PACKAGE_dnsmasq-full=y
-        CONFIG_PACKAGE_chrony=y
-
-        # ===================== 网络加速 =====================
-        CONFIG_PACKAGE_kmod-ipt-fullconenat=y
-        CONFIG_PACKAGE_kmod-ipt-offload=y
-        CONFIG_PACKAGE_kmod-nf-flow=y
-        CONFIG_PACKAGE_kmod-nft-offload=y
-        CONFIG_PACKAGE_irqbalance=y
-        CONFIG_PACKAGE_ethtool=y
-        CONFIG_KERNEL_NFT_FLOW_OFFLOAD=y
-
-        # ===================== TCP 优化 =====================
-        CONFIG_KERNEL_TCP_CONG_BBR=y
-        CONFIG_KERNEL_DEFAULT_TCP_CONG="bbr"
-
-        # ===================== 科学上网内核依赖 =====================
-        CONFIG_PACKAGE_kmod-tun=y
-        CONFIG_PACKAGE_iptables-mod-tproxy=y
-        CONFIG_PACKAGE_kmod-nft-tproxy=y
-
-        # ===================== VLAN / 桥接支持 =====================
-        CONFIG_PACKAGE_kmod-8021q=y
-        CONFIG_PACKAGE_kmod-bridge=y
-        CONFIG_PACKAGE_kmod-br-netfilter=y
-
-        # ===================== 内核网络选项 =====================
-        CONFIG_KERNEL_NET_SWITCHDEV=y
-        CONFIG_KERNEL_IPV6=y
-        CONFIG_KERNEL_BRIDGE_VLAN_FILTERING=y
-
-        # ===================== 系统优化 =====================
-        CONFIG_CCACHE=y
-        CONFIG_STRIP_KERNEL_EXPORTS=y
-        CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256k
-
-        # ===================== 调试工具 =====================
-        CONFIG_PACKAGE_tcpdump=y
-        CONFIG_PACKAGE_iperf3=y
-        CONFIG_PACKAGE_mii-tool=y
-        EOL
 
     - name: Update config
       run: |
