@@ -10,9 +10,14 @@ on:
       - staging
       - production
     paths:
-      - '.config'
+      - 'config/.config'
       - '.github/workflows/NOKIA.yml'
   workflow_dispatch:
+    inputs:
+      triggered_by:
+        description: 'Trigger source'
+        required: false
+        default: 'manual'
 
 jobs:
   build:
@@ -24,14 +29,12 @@ jobs:
       actions: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build environment setup
         run: |
           sudo apt update
-          # OpenWrt 官方要求的编译依赖
-          # Ref: https://openwrt.org/docs/guide-developer/build-system/install-buildsystem
           sudo apt install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
             python3-distutils python3-setuptools rsync swig unzip zlib1g-dev \
@@ -40,14 +43,15 @@ jobs:
       - name: Clone OpenWrt
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git openwrt
-          cp -r .github openwrt/ 2>/dev/null || true
-          cp .config openwrt/.config
-          cd openwrt
+
+      - name: Copy .config to OpenWrt
+        run: |
+          # 从仓库的 config/ 目录复制 .config 到 OpenWrt 根目录
+          cp config/.config openwrt/.config
 
       - name: Update feeds
         run: |
           cd openwrt
-          # 官方标准 feeds 更新流程
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -68,7 +72,6 @@ jobs:
       - name: Validate configuration
         run: |
           cd openwrt
-          # 官方推荐的配置验证方法
           make defconfig
           ./scripts/diffconfig.sh > config.diff
           if [ -s config.diff ]; then
@@ -80,10 +83,7 @@ jobs:
         timeout-minutes: 120
         run: |
           cd openwrt
-          # 官方标准编译流程
-          # 先清理确保干净构建
           make clean
-          # 并行编译，失败后单线程详细输出
           make -j$(nproc) || make -j1 V=s
 
       - name: Prepare logs directory
