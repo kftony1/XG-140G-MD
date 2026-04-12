@@ -1,4 +1,4 @@
-name: XG-140G-MD-根治版-永不卡死
+name: XG-140G-MD-终极根治版-永不卡死
 on:
   workflow_dispatch:
 
@@ -12,6 +12,9 @@ env:
   DEVICE_TARGET: airoha
   DEVICE_SUBCMD: an7581
   TZ: Asia/Shanghai
+  # 强制日志不截断，保留完整日志
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
 
 jobs:
   build:
@@ -20,8 +23,10 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: 初始化环境（彻底无弹窗/无报错）
+      - name: 初始化环境（彻底无弹窗/无报错/防OOM）
         run: |
           export DEBIAN_FRONTEND=noninteractive
           # 彻底干掉 needrestart 弹窗
@@ -30,14 +35,17 @@ jobs:
           sudo apt update -yq
           # 安装最小化、无冲突依赖
           sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
-          # 优化系统，避免OOM
+          # 优化系统，彻底解决OOM
           sudo sysctl -w vm.swappiness=10
-          sudo fallocate -l 8G /swapfile
+          sudo fallocate -l 16G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+          # 禁用日志截断
+          echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
+          echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
-      - name: 配置编译缓存（核心加速，避免重头编译）
+      - name: 配置编译缓存（核心加速，彻底告别重头编译）
         uses: actions/cache@v4
         with:
           path: |
@@ -45,7 +53,8 @@ jobs:
             openwrt/.ccache
             openwrt/staging_dir/host
             openwrt/staging_dir/toolchain-*
-          key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-v1
+            openwrt/build_dir/host
+          key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-v2
           restore-keys: |
             ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-
 
@@ -79,7 +88,7 @@ jobs:
           # 多核编译工具链，避免单核卡死
           make toolchain/install -j$(nproc) V=s
 
-      - name: 编译完整固件（多核，稳定不炸）
+      - name: 编译完整固件（多核，稳定不炸，日志完整）
         run: |
           cd openwrt
           # 多核编译，日志完整，不截断
