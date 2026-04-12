@@ -1,47 +1,47 @@
-name: Build ImmortalWrt
+name: Build ImmortalWrt（你专属配置版）
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update -y
-          sudo apt install -y build-essential libncurses5-dev gawk git libssl-dev gettext unzip zlib1g-dev ccache
-
-      - name: Cache
+      - name: 安全下载缓存（速度快）
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.ccache
-            immortalwrt/dl
-            immortalwrt/feeds
-          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-immortalwrt-
+          path: immortalwrt/dl
+          key: ${{ runner.os }}-dl-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-dl-
 
-      - name: Clone Source
-        run: git clone --depth 1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
+      - name: 安装依赖
+        run: |
+          sudo apt update -y
+          sudo apt install -y build-essential libncurses5-dev gawk git libssl-dev gettext unzip zlib1g-dev ccache flex bison python3 libelf-dev
 
-      - name: Update Feeds
+      - name: 清理旧环境
+        run: sudo rm -rf immortalwrt/
+
+      - name: 拉取 ImmortalWrt 源码
+        run: git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
+
+      - name: 使用你仓库的完整驱动
         run: |
           cd immortalwrt
-          ./scripts/feeds clean
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          rm -rf target/linux/airoha
+          unzip -o ../airoha.zip -d target/linux/
 
-      - name: Use Your .config
+      - name: 更新 feeds
         run: |
-          cp -f config/.config immortalwrt/.config
+          cd immortalwrt
+          ./scripts/feeds update -a && ./scripts/feeds install -a
 
-      - name: Write Network
+      # ==========================================
+      # 🔥 完全使用【你提供的】网口配置 一字不改
+      # ==========================================
+      - name: 写入你的网络配置
         run: |
           mkdir -p immortalwrt/files/etc/config
           cat <<'EOF' > immortalwrt/files/etc/config/network
@@ -67,7 +67,10 @@ config interface 'wan6'
     option proto 'dhcpv6'
 EOF
 
-      - name: Write Passwd
+      # ==========================================
+      # 🔥 完全使用【你提供的】密码配置 一字不改
+      # ==========================================
+      - name: 写入你的登录密码
         run: |
           mkdir -p immortalwrt/files/etc
           cat <<'EOF' > immortalwrt/files/etc/passwd
@@ -77,47 +80,30 @@ ftp:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 EOF
 
-      - name: Defconfig
+      - name: 使用你的 .config
+        run: cp -f config/.config immortalwrt/.config
+
+      - name: 生成配置
         run: |
           cd immortalwrt
           make defconfig
 
-      - name: Compile
-        id: compile
+      - name: 下载依赖
         run: |
           cd immortalwrt
-          make -j$(nproc) V=s >> build.log 2>&1
-          tail -50 build.log
-          echo "status=success" >> $GITHUB_OUTPUT
+          make download -j$(nproc)
 
-      - name: Upload Log
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: immortalwrt/build.log
-
-      - name: Package Firmware
-        if: steps.compile.outputs.status == 'success'
+      - name: 开始编译
         run: |
-          mkdir -p firmware
-          find immortalwrt/bin/targets/ -name "*immortalwrt*" -type f -exec mv {} firmware/ \;
-          cat > firmware/index.html <<EOF
-<!DOCTYPE html>
-<center style="padding:40px">
-<h1>✅ Build Success</h1>
-<p>IP: 192.168.1.1</p>
-<p>User: root</p>
-EOF
-          for f in firmware/*; do
-            if [ -f "$f" ] && [[ "$f" != *.html ]];then
-              n=$(basename "$f")
-              echo "<a href='$n' style='display:block;padding:10px;background:#07c;color:#fff;margin:5px'>Download $n</a>" >> firmware/index.html
-            fi
-          done
-          echo "</center>" >> firmware/index.html
+          cd immortalwrt
+          make -j$(nproc) V=s
 
-      - name: Upload Firmware
+      - name: 查看固件大小
+        run: ls -lh immortalwrt/bin/targets/airoha/*/
+
+      - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-Firmware
-          path: firmware/
+          name: ImmortalWrt-XG-140G-MD
+          path: immortalwrt/bin/targets/airoha/**/*
+          if-no-files-found: error
