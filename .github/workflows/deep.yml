@@ -29,7 +29,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 480
     permissions:
       contents: write
 
@@ -113,35 +113,46 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j8
+        make download -j4
         find dl -size -1024c -exec rm -f {} \; || true
 
-    - name: Compile firmware
+    - name: Compile firmware (single core -j1 for stability)
       id: compile
+      timeout-minutes: 360
       run: |
         cd openwrt
         export PATH="/usr/lib/ccache:$PATH"
         echo "=== Build started at $(date) ===" | tee build.log
-        echo "Using $(nproc) CPU cores"
+        echo "System info:" | tee -a build.log
+        echo "CPU cores: $(nproc)" | tee -a build.log
+        echo "Memory: $(free -h | grep Mem)" | tee -a build.log
+        echo "Disk space: $(df -h / | tail -1)" | tee -a build.log
         
-        make -j$(nproc) V=s 2>&1 | tee -a build.log
+        # 使用单核编译，最稳定，避免资源竞争和死锁
+        echo "Starting compilation with -j1 (single core)..." | tee -a build.log
+        make -j1 V=s 2>&1 | tee -a build.log
         
+        # 检查编译结果
         if [ ${PIPESTATUS[0]} -eq 0 ]; then
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "=== Build completed at $(date) ===" | tee -a build.log
+          echo "=== Build completed successfully at $(date) ===" | tee -a build.log
         else
           echo "status=failed" >> $GITHUB_OUTPUT
           echo "=== Build failed at $(date) ===" | tee -a build.log
+          echo "Last 100 lines of build.log:" 
+          tail -n 100 build.log
         fi
 
     - name: Show error log on failure
       if: steps.compile.outputs.status == 'failed'
       run: |
         cd openwrt
-        echo "========== Last 300 lines of build.log =========="
-        tail -n 300 build.log
-        echo "========== Build directory listing =========="
+        echo "========== Last 500 lines of build.log =========="
+        tail -n 500 build.log
+        echo "========== Firmware directory listing =========="
         ls -la bin/targets/ 2>/dev/null || echo "No firmware output found"
+        echo "========== Check for common errors =========="
+        grep -i "error\|failed\|missing" build.log | tail -n 50 || echo "No error patterns found"
 
     - name: Collect firmware files
       id: organize
@@ -149,6 +160,7 @@ jobs:
       run: |
         cd openwrt
         
+        # 查找固件目录
         FIRMWARE_DIR=$(find bin/targets -type d -name "*-*" | head -1)
         if [ -z "$FIRMWARE_DIR" ]; then
           echo "Error: No firmware directory found!"
@@ -158,11 +170,14 @@ jobs:
         
         mkdir -p ../artifacts
         
+        # 复制固件文件
         find "$FIRMWARE_DIR" -type f \( -name "*.bin" -o -name "*.img" -o -name "*.itb" -o -name "*.tar.gz" -o -name "*.elf" -o -name "*.dtb" \) -exec cp {} ../artifacts/ \;
         
+        # 复制编译日志和配置
         cp build.log ../artifacts/
         cp .config ../artifacts/config.build.txt
         
+        # 列出复制的文件
         echo "Copied firmware files:"
         ls -la ../artifacts/
         
