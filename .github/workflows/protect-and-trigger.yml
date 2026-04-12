@@ -1,4 +1,4 @@
-# 🔒 配置文件保护 & 违规自动执行（无冗余记录版）
+# 🔒 配置文件保护 & 违规自动执行（无循环、无冗余、白名单版）
 name: 配置文件保护 & 违规自动执行
 
 on:
@@ -8,7 +8,6 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # 核心Job：检查违规 + 违规时执行逻辑，全程单条记录
   protect-and-execute:
     runs-on: ubuntu-latest
     steps:
@@ -21,7 +20,7 @@ jobs:
         id: check-violation
         run: |
           VIOLATION="false"
-          # 处理首次提交无父节点的情况
+          # 兼容首次提交无父节点的情况
           if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
             CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
           else
@@ -38,7 +37,19 @@ jobs:
             "**/*.yaml"
           )
 
+          # 白名单：保护脚本自身不被拦截
+          WHITELIST=(
+            ".github/workflows/protect-and-trigger.yml"
+          )
+
           for FILE in $CHANGED_FILES; do
+            # 跳过白名单文件
+            if [[ " ${WHITELIST[@]} " =~ " $FILE " ]]; then
+              echo "✅ 白名单文件，跳过检查：$FILE"
+              continue
+            fi
+
+            # 检查是否匹配禁止规则
             for PAT in "${FORBIDDEN[@]}"; do
               if [[ "$FILE" == $PAT ]]; then
                 echo "❌ 违规文件：$FILE"
@@ -54,10 +65,9 @@ jobs:
         if: steps.check-violation.outputs.violation == 'true'
         run: |
           echo "🚨 检测到违规修改，自动执行Nokia.yml逻辑..."
-          # 👇 直接在这里写你Nokia.yml里的执行逻辑，比如：
+          # 👇 直接在这里写你Nokia.yml里的所有执行步骤！
+          # 示例（替换成你自己的逻辑）：
           # echo "执行你的自动化操作..."
-          # 例如：curl 通知、执行脚本、打包等
-          # 示例：
           # bash your-script.sh
           # curl -X POST https://your-webhook-url
           echo "✅ 违规逻辑执行完成"
