@@ -8,15 +8,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          sudo apt install -y build-essential libncurses5-dev gawk git libssl-dev gettext unzip zlib1g-dev ccache
 
-      - name: Enable cache
+      - name: Cache
         uses: actions/cache@v4
         with:
           path: |
@@ -27,60 +27,96 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      - name: Clone source code
+      - name: Clone Source
         run: git clone --depth 1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
 
-      - name: Update feeds
+      - name: Update Feeds
         run: |
           cd immortalwrt
           ./scripts/feeds clean
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ==============================================
-      # 核心：强制使用 你仓库根目录 /config/.config
-      # ==============================================
-      - name: Apply YOUR config from repo
+      - name: Use Your .config
         run: |
-          ls -la config/
           cp -f config/.config immortalwrt/.config
-          
-      - name: Create network config
+
+      - name: Write Network
         run: |
           mkdir -p immortalwrt/files/etc/config
-          printf "config interface 'loopback'\n    option ifname 'lo'\n    option proto 'static'\n    option ipaddr '127.0.0.1'\n    option netmask '255.0.0.0'\n\nconfig interface 'lan'\n    option ifname 'eth0'\n    option proto 'static'\n    option ipaddr '192.168.1.1'\n    option netmask '255.255.255.0'\n    option ip6assign '60'\n\nconfig interface 'wan'\n    option ifname 'eth1'\n    option proto 'dhcp'\n\nconfig interface 'wan6'\n    option ifname 'eth1'\n    option proto 'dhcpv6'\n" > immortalwrt/files/etc/config/network
+          cat <<'EOF' > immortalwrt/files/etc/config/network
+config interface 'loopback'
+    option ifname 'lo'
+    option proto 'static'
+    option ipaddr '127.0.0.1'
+    option netmask '255.0.0.0'
 
-      - name: Create passwd file
+config interface 'lan'
+    option ifname 'eth0'
+    option proto 'static'
+    option ipaddr '192.168.1.1'
+    option netmask '255.255.255.0'
+    option ip6assign '60'
+
+config interface 'wan'
+    option ifname 'eth1'
+    option proto 'dhcp'
+
+config interface 'wan6'
+    option ifname 'eth1'
+    option proto 'dhcpv6'
+EOF
+
+      - name: Write Passwd
         run: |
           mkdir -p immortalwrt/files/etc
-          printf "root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::\ndaemon:*:0:0:99999:7:::\nftp:*:0:0:99999:7:::\nnobody:*:0:0:99999:7:::\n" > immortalwrt/files/etc/passwd
+          cat <<'EOF' > immortalwrt/files/etc/passwd
+root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+EOF
 
-      - name: Generate config
+      - name: Defconfig
         run: |
           cd immortalwrt
           make defconfig
 
-      - name: Compile firmware
+      - name: Compile
         id: compile
         run: |
           cd immortalwrt
-          make -j$(nproc) V=s 2>&1 | tee build.log
+          make -j$(nproc) V=s >> build.log 2>&1
+          tail -50 build.log
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Prepare firmware
+      - name: Upload Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: immortalwrt/build.log
+
+      - name: Package Firmware
         if: steps.compile.outputs.status == 'success'
         run: |
           mkdir -p firmware
-          find immortalwrt/bin/targets/ -type f -name "*immortalwrt*" -exec mv {} firmware/ \;
-          echo "<h1>Build Success</h1>" > firmware/index.html
+          find immortalwrt/bin/targets/ -name "*immortalwrt*" -type f -exec mv {} firmware/ \;
+          cat > firmware/index.html <<EOF
+<!DOCTYPE html>
+<center style="padding:40px">
+<h1>✅ Build Success</h1>
+<p>IP: 192.168.1.1</p>
+<p>User: root</p>
+EOF
           for f in firmware/*; do
-            if [ -f "$f" ] && [[ ! $f == *.html ]]; then
-              name=$(basename "$f")
-              echo "<a href='$name'>Download $name</a><br>" >> firmware/index.html
+            if [ -f "$f" ] && [[ "$f" != *.html ]];then
+              n=$(basename "$f")
+              echo "<a href='$n' style='display:block;padding:10px;background:#07c;color:#fff;margin:5px'>Download $n</a>" >> firmware/index.html
             fi
           done
+          echo "</center>" >> firmware/index.html
 
-      - name: Upload artifacts
+      - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt-Firmware
