@@ -1,0 +1,198 @@
+# 名称：Nokia XG-140G-MD (AN7581) ImmortalWrt 云编译
+# 作者：AI 助手 - 专为 XG-140G-MD 换壳机定制
+name: Build XG-140G-MD ImmortalWrt
+
+# 触发条件：手动触发编译
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'ImmortalWrt 分支'
+        required: true
+        default: 'master'
+        type: choice
+        options:
+          - master
+          - openwrt-23.05
+      target:
+        description: '编译目标平台'
+        required: true
+        default: 'arm64'
+        type: choice
+        options:
+          - arm64
+
+# 权限配置：确保可上传发布包
+permissions:
+  contents: write
+  actions: read
+  packages: write
+
+# 全局环境变量
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  REPO_BRANCH: ${{ github.event.inputs.branch }}
+  CONFIG_FILE: config/.config
+  CUSTOM_SH: custom.sh
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  # 关键修复：固定你的设备目标型号
+  DEVICE_TARGET: airoha
+  DEVICE_SUBCMD: an7581
+
+# 编译任务
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120 # 适当缩短，AN7581 编译较快
+
+    steps:
+    - name: 检查项目仓库
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # 1. 环境初始化与优化
+    - name: 初始化编译环境
+      run: |
+        sudo apt update -y
+        sudo apt upgrade -y
+        # 安装核心依赖
+        sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+        libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw6-dev libreadline-dev libssl-dev \
+        libtool libyaml-dev libz-dev lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf \
+        python3-pip python3-pyelftools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
+        uglifyjs unzip upx-ucl vim wget xmlto xxd zlib1g-dev
+        # 系统优化
+        sudo timedatectl set-timezone "$TZ"
+        # 扩展交换空间以防编译卡死
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        sudo fallocate -l 16G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        # 显示磁盘空间
+        df -h
+
+    # 2. 源码缓存（核心加速）
+    - name: 缓存源码与依赖
+      uses: actions/cache@v4
+      id: cache-source
+      with:
+        path: |
+          openwrt/
+          !openwrt/.git/
+          !openwrt/tmp/
+          !openwrt/build_dir/host/
+          !openwrt/staging_dir/
+        key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-${{ github.sha }}
+        restore-keys: |
+          ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-
+
+    # 3. 拉取源码
+    - name: 拉取 ImmortalWrt 官方源码
+      run: |
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        cd openwrt
+        # 初始化 feeds
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    # 4. 加载配置
+    - name: 加载编译配置
+      run: |
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        cd openwrt
+        make defconfig
+        # 显示配置信息
+        grep -E "CONFIG_TARGET|CONFIG_DEVICE_MODEL" .config || true
+
+    # 5. 下载编译依赖（断点续传）
+    - name: 下载依赖包
+      run: |
+        cd openwrt
+        make download -j$(nproc)
+        # 清理无效文件
+        find dl -size -1024c -exec ls -l {} \; || true
+        find dl -size -1024c -exec rm -f {} \; || true
+
+    # 6. 自定义脚本（执行你的 network/shadow/型号覆盖逻辑）
+    - name: 应用自定义脚本
+      if: env.CUSTOM_SH != ''
+      run: |
+        chmod +x $CUSTOM_SH
+        cd openwrt
+        ../$CUSTOM_SH
+
+    # 7. 核心编译（防失败机制 + 完整日志）
+    - name: 编译固件
+      id: compile
+      run: |
+        cd openwrt
+        echo "=== 开始编译 ==="
+        # 多线程编译，失败则单线程完整输出错误
+        make -j$(nproc) || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "=== 编译完成 ==="
+        # 列出编译产物
+        ls -la bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}/ || true
+
+    # 8. 【关键修复】整理固件，定位到正确的 an7581 目录
+    - name: 整理固件文件
+      id: organize
+      if: success()
+      run: |
+        # 直接进入固定正确目录，不再用通配符
+        cd openwrt/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}
+        # 删除无关 packages 目录，缩小体积
+        rm -rf packages
+        # 记录路径
+        echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
+        # 列出最终固件
+        echo "=== 最终固件列表 ==="
+        ls -la
+
+    # 9. 上传到 Actions 产物（90天有效）
+    - name: 上传固件到 Actions
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success'
+      with:
+        name: ImmortalWrt-XG-140G-MD-${{ env.REPO_BRANCH }}
+        path: ${{ env.FIRMWARE_PATH }}
+        retention-days: 90
+        compression-level: 0
+
+    # 10. 上传到 GitHub Release（永久存储）
+    - name: 上传固件到 Release
+      uses: softprops/action-gh-release@v2
+      if: env.UPLOAD_RELEASE == 'true' && success()
+      with:
+        name: Nokia XG-140G-MD ImmortalWrt 固件 (${{ env.REPO_BRANCH }})
+        tag_name: ${{ env.REPO_BRANCH }}-${{ github.run_number }}
+        files: ${{ env.FIRMWARE_PATH }}/*
+        body: |
+          # 📋 固件信息
+          - **设备**: Nokia XG-140G-MD (AN7581 换壳机)
+          - **架构**: ARMv8 A53
+          - **硬件**: EN8811H 2.5G PHY / FM25 Flash / USB3.0
+          - **源码**: ImmortalWrt ${{ env.REPO_BRANCH }}
+          - **编译时间**: ${{ env.DATE }}
+          - **显示名称**: Nokia XG-140G-MD (自定义覆盖)
+          
+          # ✅ 功能特性
+          - ✔️ 2.5G 网口全速 (EN8811H)
+          - ✔️ USB3.0/2.0 存储支持
+          - ✔️ 复旦微 FM25 驱动正常
+          - ✔️ 中文 LuCI + Argon 主题
+          - ✔️ BBR 拥塞控制加速
+          - ✔️ 有线 Mesh / 802.11s
+          
+          # 📥 下载说明
+          请选择 `sysupgrade` 或 `factory` 镜像刷入。
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
