@@ -57,7 +57,6 @@ config interface 'wan6'
     option ifname 'eth1'
     option proto 'dhcpv6'
 EOF
-          echo "✅ Created network config"
 
       - name: Create shadow file
         run: |
@@ -68,7 +67,6 @@ daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 EOF
-          echo "✅ Created shadow config"
 
       - name: Create network script
         run: |
@@ -78,7 +76,6 @@ EOF
 ifup -a
 EOF
           chmod +x immortalwrt/files/etc/network
-          echo "✅ Created network script"
 
       - name: Update feeds
         run: |
