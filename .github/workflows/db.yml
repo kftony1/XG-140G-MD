@@ -1,160 +1,156 @@
-name: Build ImmortalWrt for Nokia XG-140G-MD
+# 名称：Nokia XG-040G-MD ImmortalWrt 云编译
+name: Build ImmortalWrt for XG-040G-MD
 
+# 触发条件：手动触发编译
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
-      ssh:
-        description: 'SSH Debug'
-        required: false
-        default: 'false'
+      target:
+        description: '编译目标平台'
+        required: true
+        default: 'arm64'
+      branch:
+        description: 'ImmortalWrt 分支'
+        required: true
+        default: 'master'
 
+# 权限配置：确保产物可上传下载
+permissions:
+  contents: write
+  actions: read
+  packages: write
+
+# 全局环境变量（适配你的设备）
 env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: master
-  DEVICE_NAME: Nokia-XG140G-MD
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  REPO_BRANCH: ${{ github.event.inputs.branch }}
+  DEVICE_TARGET: arm64
+  DEVICE_SUBTARGET: generic
   CONFIG_FILE: config/.config
+  CUSTOM_SH: custom.sh
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
+# 编译任务
 jobs:
   build:
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+    timeout-minutes: 1440
+
+    # 步骤日志输出优化，防止截断
     steps:
-      - name: Checkout
-        uses: actions/checkout@main
+    - name: 检查项目仓库
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Initialization Environment
-        run: |
-          sudo apt update -y
-          sudo apt upgrade -y
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfreetype6-dev libgmp3-dev libltdl-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
-          mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-pyelftools \
-          libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
-          vim wget xmlto xxd zlib1g-dev
-          sudo timedatectl set-timezone "$TZ"
-          git config --global core.longpaths true
+    # 服务器环境优化
+    - name: 初始化编译环境
+      run: |
+        sudo apt update -y
+        sudo apt upgrade -y
+        sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+        libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw6-dev libreadline-dev libssl-dev \
+        libtool libyaml-dev libz-dev lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf \
+        python3-pip python3-pyelftools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
+        uglifyjs unzip upx-ucl vim wget xmlto xxd zlib1g-dev
+        sudo timedatectl set-timezone "$TZ"
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        sudo fallocate -l 16G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        df -h
 
-      - name: Clone Source Code
-        run: |
-          git clone -b $REPO_BRANCH $REPO_URL openwrt
-          cd openwrt
-          mkdir -p files/etc/config
-          mkdir -p files/etc
+    # 源码缓存（大幅加速编译）
+    - name: 缓存源码与依赖
+      uses: actions/cache@v4
+      id: cache-source
+      with:
+        path: |
+          openwrt/
+          !openwrt/.git/
+          !openwrt/tmp/
+          !openwrt/build_dir/
+          !openwrt/staging_dir/
+          !openwrt/bin/
+        key: source-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}
+        restore-keys: |
+          source-${{ env.REPO_BRANCH }}-
 
-      - name: Apply Custom Config & Files
-        run: |
-          cd openwrt
-          [ -f ../$CONFIG_FILE ] && cp -f ../$CONFIG_FILE .config
-          
-          cat > files/etc/config/network <<EOF
-          config interface 'loopback'
-              option ifname 'lo'
-              option proto 'static'
-              option ipaddr '127.0.0.1'
-              option netmask '255.0.0.0'
+    - name: 拉取ImmortalWrt官方源码
+      run: |
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        cd openwrt
 
-          config interface 'lan'
-              option ifname 'eth0'
-              option proto 'static'
-              option ipaddr '192.168.1.1'
-              option netmask '255.255.255.0'
-              option ip6assign '60'
+    - name: 拉取官方 feeds 依赖
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
-          config interface 'wan'
-              option ifname 'eth1'
-              option proto 'dhcp'
+    # 加载你的自定义配置文件
+    - name: 加载编译配置文件
+      run: |
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        cd openwrt
+        make defconfig
 
-          config interface 'wan6'
-              option ifname 'eth1'
-              option proto 'dhcpv6'
-          EOF
-          
-          cat > files/etc/shadow <<EOF
-          root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-          daemon:*:0:0:99999:7:::
-          ftp:*:0:0:99999:7:::
-          nobody:*:0:0:99999:7:::
-          EOF
-          
-          chmod 600 files/etc/shadow
+    # 下载编译依赖（缓存+断点续传）
+    - name: 下载依赖包
+      run: |
+        cd openwrt
+        make download -j$(nproc)
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
 
-      - name: Cache for OpenWrt
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/dl
-            openwrt/.ccache
-          key: ${{ env.DEVICE_NAME }}-build-cache-${{ github.sha }}
-          restore-keys: |
-            ${{ env.DEVICE_NAME }}-build-cache-
+    # 核心编译步骤（完整错误日志输出）
+    - name: 编译固件（单线程输出完整错误）
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 V=s
+        echo "==================== 编译信息 ===================="
+        grep -i '^config.*' .config | head -20
+        df -h
 
-      - name: Update Feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+    # 整理固件产物
+    - name: 整理固件文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && success()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Download Dependencies
-        run: |
-          cd openwrt
-          make defconfig
-          make download -j8
-          find dl -size -1024c -exec ls -l {} \;
-          find dl -size -1024c -exec rm -f {} \;
+    # 上传固件到 Actions 产物（可直接下载）
+    - name: 上传固件到 Actions
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success'
+      with:
+        name: ImmortalWrt-XG-040G-MD-${{ env.REPO_BRANCH }}
+        path: ${{ env.FIRMWARE_PATH }}
+        retention-days: 90
+        compression-level: 0
 
-      - name: Compile Firmware
-        id: compile
-        run: |
-          cd openwrt
-          echo -e "$(nproc) thread compile"
-          make -j$(nproc) V=s 2>&1 | tee build.log
-          echo "status=success" >> $GITHUB_OUTPUT
-
-      - name: Check Compile Error
-        if: steps.compile.outputs.status != 'success'
-        run: |
-          cd openwrt
-          tail -n 300 build.log
-          exit 1
-
-      - name: Organize Files
-        id: organize
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "DATE=$(date +%Y-%m-%d-%H%M)" >> $GITHUB_ENV
-
-      - name: Upload Firmware
-        uses: actions/upload-artifact@main
-        if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
-        with:
-          name: ${{ env.DEVICE_NAME }}-firmware-${{ env.DATE }}
-          path: ${{ env.FIRMWARE_PATH }}
-
-      - name: Generate Release
-        uses: ncipollo/release-action@main
-        if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
-        with:
-          name: ${{ env.DEVICE_NAME }} 固件 ${{ env.DATE }}
-          tag: ${{ env.DEVICE_NAME }}-${{ env.DATE }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          artifacts: ${{ env.FIRMWARE_PATH }}/*
-          allowUpdates: true
-          replacesArtifacts: true
-          body: |
-            设备：Nokia XG-140G-MD (AIRHOA AN7581)
-            架构：ARM A53
-            PHY：达发 EN8811H 2.5G
-            Flash：复旦微 FM25G02BI3
-            USB：USB3.0/USB2.0
-            管理地址：192.168.1.1
+    # 上传固件到 GitHub Release（永久存储+下载按钮）
+    - name: 上传固件到 Release
+      uses: softprops/action-gh-release@v2
+      if: env.UPLOAD_RELEASE == 'true' && success()
+      with:
+        name: Nokia XG-040G-MD ImmortalWrt 固件
+        tag_name: ${{ env.REPO_BRANCH }}-${{ github.run_number }}
+        files: ${{ env.FIRMWARE_PATH }}/*
+        body: |
+          设备：Nokia XG-040G-MD (AIRHOA AN7581)
+          架构：ARMv8 A53
+          硬件：复旦微 FM25G02BI3 / 达发 EN8811H 2.5G PHY / USB3.0/2.0
+          源码：ImmortalWrt 官方 ${{ env.REPO_BRANCH }}
+          编译时间：$(date +"%Y-%m-%d %H:%M:%S")
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
