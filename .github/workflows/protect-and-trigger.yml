@@ -1,5 +1,5 @@
-# 🔒 禁止修改配置文件 + 违规自动触发第一个YML脚本（单文件版）
-name: 配置文件保护 & 违规自动执行脚本
+# 🔒 配置文件保护 & 违规自动执行（无冗余记录版）
+name: 配置文件保护 & 违规自动执行
 
 on:
   push:
@@ -8,11 +8,9 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # 第一步：禁止修改/新建配置文件
-  protect-config:
+  # 核心Job：检查违规 + 违规时执行逻辑，全程单条记录
+  protect-and-execute:
     runs-on: ubuntu-latest
-    outputs:
-      is_violation: ${{ steps.check-violation.outputs.violation }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -23,9 +21,14 @@ jobs:
         id: check-violation
         run: |
           VIOLATION="false"
-          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD || true)
+          # 处理首次提交无父节点的情况
+          if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD)
+          fi
 
-          # 禁止的文件类型
+          # 禁止的文件规则（可自定义）
           FORBIDDEN=(
             "*.yml"
             "*.yaml"
@@ -45,36 +48,27 @@ jobs:
           done
 
           echo "violation=$VIOLATION" >> $GITHUB_OUTPUT
+          echo "✅ 违规检查完成，状态：$VIOLATION"
 
-          if [ "$VIOLATION" == "true" ]; then
-            echo "❌ 禁止修改/新建任何 .yml / .yaml / config 文件！"
-            exit 1
-          else
-            echo "✅ 本次提交合规"
-          fi
-
-  # 第二步：如果违规 → 自动执行仓库第一个YML脚本
-  run-first-yml:
-    needs: protect-config
-    if: ${{ needs.protect-config.outputs.is_violation == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 找到并执行第一个YML脚本
+      - name: 违规时执行Nokia.yml逻辑（无额外记录）
+        if: steps.check-violation.outputs.violation == 'true'
         run: |
-          FIRST_YML=$(find . -name "*.yml" -o -name "*.yaml" | grep -v '.git' | head -n 1)
-          
-          if [ -z "$FIRST_YML" ]; then
-            echo "❌ 未找到任何YML脚本"
-            exit 1
-          fi
+          echo "🚨 检测到违规修改，自动执行Nokia.yml逻辑..."
+          # 👇 直接在这里写你Nokia.yml里的执行逻辑，比如：
+          # echo "执行你的自动化操作..."
+          # 例如：curl 通知、执行脚本、打包等
+          # 示例：
+          # bash your-script.sh
+          # curl -X POST https://your-webhook-url
+          echo "✅ 违规逻辑执行完成"
 
-          echo "✅ 找到第一个脚本：$FIRST_YML"
-          echo "🚀 自动执行中..."
+      - name: 违规阻断提交
+        if: steps.check-violation.outputs.violation == 'true'
+        run: |
+          echo "❌ 禁止修改/新建任何 .yml / .yaml / config 文件！提交已被阻断"
+          exit 1
 
-          # 触发 GitHub Action 运行
-          gh workflow run "$FIRST_YML" --ref $GITHUB_REF_NAME
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 合规提交通过
+        if: steps.check-violation.outputs.violation == 'false'
+        run: |
+          echo "✅ 本次提交合规，流程正常通过"
