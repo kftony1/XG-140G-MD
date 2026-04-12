@@ -59,7 +59,7 @@ config interface 'wan6'
 EOF
           echo "✅ Created network config"
 
-      - name: Create shadow file (password config)
+      - name: Create shadow file
         run: |
           mkdir -p immortalwrt/files/etc/config
           cat > immortalwrt/files/etc/config/shadow << 'EOF'
@@ -75,23 +75,10 @@ EOF
           mkdir -p immortalwrt/files/etc
           cat > immortalwrt/files/etc/network << 'EOF'
 #!/bin/sh
-# Custom network script
-# 自动启动网络接口
 ifup -a
 EOF
           chmod +x immortalwrt/files/etc/network
           echo "✅ Created network script"
-
-      - name: Verify files created
-        run: |
-          echo "=== Created files ==="
-          find immortalwrt/files -type f
-          echo ""
-          echo "=== network config content ==="
-          cat immortalwrt/files/etc/config/network
-          echo ""
-          echo "=== shadow content ==="
-          cat immortalwrt/files/etc/config/shadow
 
       - name: Update feeds
         run: |
