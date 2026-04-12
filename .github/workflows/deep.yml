@@ -16,8 +16,9 @@ on:
       - '.github/workflows/*.yml'
 
 env:
-  REPO_URL: https://github.com/lwz322/immortalwrt-airoha
-  REPO_BRANCH: master
+  # ImmortalWrt 官方主仓库（已包含 Airoha 支持）
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10           # 使用稳定版分支
   DEVICE_NAME: Nokia-XG140G-MD
   CONFIG_FILE: config/.config
   CUSTOM_SCRIPT: custom.sh
@@ -39,19 +40,16 @@ jobs:
     - name: Free disk space
       run: |
         sudo apt clean
-        sudo rm -rf /usr/share/dotnet /etc/mysql /usr/local/lib/android
+        sudo rm -rf /usr/share/dotnet /etc/mysql /usr/local/lib/android /opt/ghc
         df -h
 
     - name: Prepare build environment
       run: |
         sudo apt update -y
-        sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfreetype6-dev libgmp3-dev libltdl-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
-          mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-pyelftools \
-          libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
-          vim wget xmlto xxd zlib1g-dev
+        sudo apt install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-distutils rsync unzip zlib1g-dev file wget \
+          python3 python3-pip python3-pyelftools patch bc cpio ccache
         sudo timedatectl set-timezone "$TZ"
 
     - name: Clone source code
@@ -63,25 +61,16 @@ jobs:
       run: |
         if [ -f "${{ env.CUSTOM_SCRIPT }}" ]; then
           chmod +x "${{ env.CUSTOM_SCRIPT }}"
-          echo "Execute permission granted to ${{ env.CUSTOM_SCRIPT }}"
-        else
-          echo "Warning: ${{ env.CUSTOM_SCRIPT }} not found"
+          echo "Execute permission granted"
         fi
 
     - name: Apply custom config and scripts
       run: |
         cd openwrt
-        
-        if [ -f "../${{ env.CONFIG_FILE }}" ]; then
-          cp -f "../${{ env.CONFIG_FILE }}" .config
-          echo "Custom .config applied."
-        else
-          echo "Error: .config file not found"
-          exit 1
-        fi
-        
+        # 复制 .config
+        cp -f "../${{ env.CONFIG_FILE }}" .config 2>/dev/null || { echo "Error: .config not found"; exit 1; }
+        # 运行 custom.sh
         if [ -f "../${{ env.CUSTOM_SCRIPT }}" ]; then
-          echo "Running custom.sh..."
           bash "../${{ env.CUSTOM_SCRIPT }}"
         fi
 
@@ -92,9 +81,9 @@ jobs:
           openwrt/dl
           openwrt/.ccache
           openwrt/build_dir
-        key: ${{ env.DEVICE_NAME }}-build-${{ hashFiles('openwrt/.config') }}-${{ github.sha }}
+        key: ${{ env.DEVICE_NAME }}-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config') }}
         restore-keys: |
-          ${{ env.DEVICE_NAME }}-build-
+          ${{ env.DEVICE_NAME }}-${{ env.REPO_BRANCH }}-
 
     - name: Update feeds
       run: |
@@ -105,103 +94,84 @@ jobs:
     - name: Configure and download sources
       run: |
         cd openwrt
-        rm -f .config.old
         make defconfig
         make download -j4
-        find dl -size -1024c -exec rm -f {} \; || true
+        find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
 
-    - name: Clean previous build (if stuck)
-      run: |
-        cd openwrt
-        # 如果上次编译卡住，清理可能有问题的包
-        if [ -f build.log ]; then
-          echo "Previous build log found, checking for stuck..."
-          if grep -q "erandom.lo" build.log; then
-            echo "Found stuck at erandom.lo, cleaning..."
-            rm -rf build_dir/target-*/*/erandom* 2>/dev/null || true
-          fi
-        fi
-
-    - name: Compile firmware with timeout protection
+    - name: Compile firmware
       id: compile
-      timeout-minutes: 300
       run: |
         cd openwrt
         export PATH="/usr/lib/ccache:$PATH"
-        
         echo "=== Build started at $(date) ===" | tee build.log
-        echo "System info:" | tee -a build.log
-        echo "CPU cores: $(nproc)" | tee -a build.log
-        echo "Memory: $(free -h | grep Mem)" | tee -a build.log
         
-        # 使用 timeout 命令，防止单个命令卡死
-        echo "Starting compilation with -j1..."
-        timeout 280m make -j1 V=s 2>&1 | tee -a build.log
+        # 单核编译最稳定
+        make -j1 V=s 2>&1 | tee -a build.log
         
-        # 检查是否超时
-        if [ ${PIPESTATUS[0]} -eq 124 ]; then
-          echo "status=timeout" >> $GITHUB_OUTPUT
-          echo "=== Build TIMEOUT at $(date) ===" | tee -a build.log
-          exit 1
-        elif [ ${PIPESTATUS[0]} -eq 0 ]; then
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "=== Build SUCCESS at $(date) ===" | tee -a build.log
+          echo "=== Build SUCCESS ===" | tee -a build.log
         else
           echo "status=failed" >> $GITHUB_OUTPUT
-          echo "=== Build FAILED at $(date) ===" | tee -a build.log
+          echo "=== Build FAILED ===" | tee -a build.log
+          tail -n 200 build.log
         fi
 
-    - name: Show error log on failure
-      if: steps.compile.outputs.status != 'success'
-      run: |
-        cd openwrt
-        echo "========== Last 500 lines =========="
-        tail -n 500 build.log
-        echo "========== Error patterns =========="
-        grep -E "error:|Error:|failed:|Missing:" build.log | tail -n 30 || echo "No errors found"
+    - name: Upload debug logs on failure
+      if: steps.compile.outputs.status == 'failed'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-debug-logs
+        path: openwrt/build.log
+        retention-days: 7
 
     - name: Collect firmware files
       id: organize
       if: steps.compile.outputs.status == 'success'
       run: |
         cd openwrt
-        FIRMWARE_DIR=$(find bin/targets -type d -name "*-*" | head -1)
-        if [ -z "$FIRMWARE_DIR" ]; then
-          echo "No firmware directory found!"
+        FW_DIR=$(find bin/targets -type f -name "*.bin" 2>/dev/null | head -1 | xargs dirname)
+        if [ -z "$FW_DIR" ]; then
+          echo "No firmware found!"
           exit 1
         fi
         mkdir -p ../artifacts
-        find "$FIRMWARE_DIR" -type f \( -name "*.bin" -o -name "*.img" -o -name "*.itb" -o -name "*.tar.gz" \) -exec cp {} ../artifacts/ \;
+        cp $FW_DIR/*.bin ../artifacts/ 2>/dev/null || true
+        cp $FW_DIR/*.img ../artifacts/ 2>/dev/null || true
+        cp $FW_DIR/*.tar.gz ../artifacts/ 2>/dev/null || true
         cp build.log ../artifacts/
         cp .config ../artifacts/config.build.txt
-        echo "DATE=$(date +%Y-%m-%d-%H%M)" >> $GITHUB_ENV
+        echo "DATE=$(date +%Y-%m-%d-%H%M)" >> $GITHUB_OUTPUT
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware artifacts
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
       with:
-        name: ${{ env.DEVICE_NAME }}-firmware-${{ env.DATE }}
+        name: ${{ env.DEVICE_NAME }}-firmware-${{ steps.organize.outputs.DATE }}
         path: artifacts/
         retention-days: 7
-        compression-level: 0
 
     - name: Create GitHub Release
       uses: ncipollo/release-action@v1
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       with:
-        name: ${{ env.DEVICE_NAME }} Firmware ${{ env.DATE }}
-        tag: ${{ env.DEVICE_NAME }}-${{ env.DATE }}
+        name: ${{ env.DEVICE_NAME }} Firmware ${{ steps.organize.outputs.DATE }}
+        tag: ${{ env.DEVICE_NAME }}-${{ steps.organize.outputs.DATE }}
         token: ${{ secrets.GITHUB_TOKEN }}
         artifacts: artifacts/*
         allowUpdates: true
         replacesArtifacts: true
         body: |
-          ## 设备信息
-          - **型号**: Nokia XG-140G-MD
-          - **SoC**: AIROHA AN7581 (ARM Cortex-A53)
-          - **PHY**: 达发 EN8811H 2.5G
-          - **管理地址**: http://192.168.1.1
+          ## Nokia XG-140G-MD ImmortalWrt 固件
+          
+          | 项目 | 信息 |
+          |------|------|
+          | SoC | AIROHA AN7581 (ARM Cortex-A53) |
+          | PHY | 达发 EN8811H 2.5G |
+          | Flash | 复旦微 FM25G02BI3 |
+          | 管理地址 | http://192.168.1.1 |
+          | 源码 | ImmortalWrt ${{ env.REPO_BRANCH }} |
 
     - name: Debug SSH
       if: github.event.inputs.ssh == 'true'
