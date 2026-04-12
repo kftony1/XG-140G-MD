@@ -1,4 +1,4 @@
-name: XG-140G-MD-单核-完整日志-最终版
+name: XG-140G-MD-防卡死-完整版
 
 on:
   workflow_dispatch:
@@ -12,21 +12,21 @@ jobs:
     timeout-minutes: 420
 
     steps:
-      - name: 检出仓库代码
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 初始化环境（无弹窗·无报错·纯稳定）
+      - name: 初始化环境（无弹窗·无报错·无依赖错误）
         run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt remove -y needrestart
           sudo apt update -yq
           sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
 
-      - name: 拉取ImmortalWrt源码
+      - name: 拉取 ImmortalWrt 源码
         run: |
           git clone https://github.com/immortalwrt/immortalwrt.git --depth=1 openwrt
 
-      - name: 加载.config配置
+      - name: 加载你的 .config 配置
         run: |
           cp config/.config openwrt/.config
           cd openwrt
@@ -34,23 +34,30 @@ jobs:
           ./scripts/feeds install -a
           make defconfig
 
-      - name: 运行自定义脚本custom.sh
+      - name: 运行自定义脚本（显示 XG-140G-MD）
         run: |
           chmod +x custom.sh
           cd openwrt
           ../custom.sh
 
-      - name: 下载所有依赖（完整日志）
+      - name: 下载所有依赖包
         run: |
           cd openwrt
-          make download -j1 V=s
+          make download -j4 V=s
 
-      - name: 单核编译固件（-j1 不截断日志 最稳定）
+      # 👇 这一步专门解决卡死问题
+      - name: 预编译工具链（防卡死）
         run: |
           cd openwrt
-          make -j1 V=s
+          make toolchain/install -j4 V=s
 
-      - name: 显示固件文件
+      # 👇 正式编译固件（多核不卡）
+      - name: 编译完整固件
+        run: |
+          cd openwrt
+          make -j4 V=s
+
+      - name: 显示生成的固件
         run: |
           ls -la openwrt/bin/targets/airoha/an7581/
 
