@@ -1,4 +1,4 @@
-name: Build ImmortalWrt（你专属配置版）
+name: Build ImmortalWrt（修复版）
 on:
   workflow_dispatch:
 
@@ -9,7 +9,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 安全下载缓存（速度快）
+      - name: 安全下载缓存
         uses: actions/cache@v4
         with:
           path: immortalwrt/dl
@@ -27,10 +27,9 @@ jobs:
       - name: 拉取 ImmortalWrt 源码
         run: git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
 
-      - name: 使用你仓库的完整驱动
+      - name: 使用你仓库的完整驱动（修复：不删除原版平台）
         run: |
           cd immortalwrt
-          rm -rf target/linux/airoha
           unzip -o ../airoha.zip -d target/linux/
 
       - name: 更新 feeds
@@ -38,10 +37,7 @@ jobs:
           cd immortalwrt
           ./scripts/feeds update -a && ./scripts/feeds install -a
 
-      # ==========================================
-      # 🔥 完全使用【你提供的】网口配置 一字不改
-      # ==========================================
-      - name: 写入你的网络配置
+      - name: 写入网络配置
         run: |
           mkdir -p immortalwrt/files/etc/config
           cat <<'EOF' > immortalwrt/files/etc/config/network
@@ -67,10 +63,7 @@ config interface 'wan6'
     option proto 'dhcpv6'
 EOF
 
-      # ==========================================
-      # 🔥 完全使用【你提供的】密码配置 一字不改
-      # ==========================================
-      - name: 写入你的登录密码
+      - name: 写入登录密码
         run: |
           mkdir -p immortalwrt/files/etc
           cat <<'EOF' > immortalwrt/files/etc/passwd
@@ -93,17 +86,17 @@ EOF
           cd immortalwrt
           make download -j$(nproc)
 
-      - name: 开始编译
+      - name: 开始编译（修复：单线程编译，避免小众平台失败）
         run: |
           cd immortalwrt
-          make -j$(nproc) V=s
+          make -j1 V=s
 
-      - name: 查看固件大小
+      - name: 查看固件目录
         run: ls -lh immortalwrt/bin/targets/airoha/*/
 
-      - name: 上传固件
+      - name: 上传固件（修复：通配符路径）
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt-XG-140G-MD
-          path: immortalwrt/bin/targets/airoha/**/*
+          path: immortalwrt/bin/targets/**/*
           if-no-files-found: error
