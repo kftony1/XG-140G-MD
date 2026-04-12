@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-name: Build ImmortalWrt Firmware for Nokia XG-140G-MD
+name: Build LEDE Firmware for Nokia XG-140G-MD
 
 on:
   workflow_dispatch:
@@ -16,8 +16,9 @@ on:
       - '.github/workflows/*.yml'
 
 env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-23.05
+  # 使用 Lean 仓库（编译成功率更高，更稳定）
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
   DEVICE_NAME: Nokia-XG140G-MD
   CONFIG_FILE: config/.config
   CUSTOM_SCRIPT: custom.sh
@@ -39,7 +40,8 @@ jobs:
     - name: Free disk space
       run: |
         sudo apt clean
-        sudo rm -rf /usr/share/dotnet /etc/mysql /usr/local/lib/android /opt/ghc
+        sudo rm -rf /usr/share/dotnet /etc/mysql /usr/local/lib/android /opt/ghc /usr/local/share/boost
+        docker rmi $(docker images -q) 2>/dev/null || true
         df -h
 
     - name: Prepare build environment
@@ -61,12 +63,15 @@ jobs:
       run: |
         if [ -f "${{ env.CUSTOM_SCRIPT }}" ]; then
           chmod +x "${{ env.CUSTOM_SCRIPT }}"
+          echo "Execute permission granted"
         fi
 
     - name: Apply custom config and scripts
       run: |
         cd openwrt
+        # 复制 .config
         cp -f "../${{ env.CONFIG_FILE }}" .config 2>/dev/null || { echo "Error: .config not found"; exit 1; }
+        # 运行 custom.sh
         if [ -f "../${{ env.CUSTOM_SCRIPT }}" ]; then
           bash "../${{ env.CUSTOM_SCRIPT }}"
         fi
@@ -79,9 +84,9 @@ jobs:
           openwrt/.ccache
           openwrt/build_dir
           openwrt/staging_dir
-        key: ${{ env.DEVICE_NAME }}-23.05-v2-${{ hashFiles('openwrt/.config') }}
+        key: ${{ env.DEVICE_NAME }}-lede-${{ hashFiles('openwrt/.config') }}
         restore-keys: |
-          ${{ env.DEVICE_NAME }}-23.05-v2-
+          ${{ env.DEVICE_NAME }}-lede-
           ${{ env.DEVICE_NAME }}-
 
     - name: Update feeds
@@ -96,37 +101,20 @@ jobs:
         make defconfig
         make download -j4
         find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
+        
+        # 显示当前配置
+        echo "=== Current target configuration ==="
+        grep "CONFIG_TARGET" .config | grep -v "^#" | head -10
 
-    - name: Compile firmware with timeout protection
+    - name: Compile firmware
       id: compile
       run: |
         cd openwrt
         export PATH="/usr/lib/ccache:$PATH"
         echo "=== Build started at $(date) ===" | tee build.log
+        echo "Source: Lean's LEDE" | tee -a build.log
         
-        # 使用 timeout 命令，每个阶段单独编译
-        echo "Step 1: Compile toolchain..." | tee -a build.log
-        timeout 90m make -j1 toolchain/compile V=s 2>&1 | tee -a build.log
-        if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo "Toolchain compilation failed or timeout"
-          exit 1
-        fi
-        
-        echo "Step 2: Compile target..." | tee -a build.log
-        timeout 120m make -j1 target/compile V=s 2>&1 | tee -a build.log
-        if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo "Target compilation failed or timeout"
-          exit 1
-        fi
-        
-        echo "Step 3: Compile packages..." | tee -a build.log
-        timeout 180m make -j1 package/compile V=s 2>&1 | tee -a build.log
-        if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo "Package compilation failed or timeout"
-          exit 1
-        fi
-        
-        echo "Step 4: Build final image..." | tee -a build.log
+        # 单核编译最稳定
         make -j1 V=s 2>&1 | tee -a build.log
         
         if [ ${PIPESTATUS[0]} -eq 0 ]; then
@@ -135,6 +123,7 @@ jobs:
         else
           echo "status=failed" >> $GITHUB_OUTPUT
           echo "=== Build FAILED ===" | tee -a build.log
+          tail -n 300 build.log
         fi
 
     - name: Upload debug logs on failure
@@ -162,6 +151,7 @@ jobs:
         cp $FW_DIR/*.bin ../artifacts/ 2>/dev/null || true
         cp $FW_DIR/*.img ../artifacts/ 2>/dev/null || true
         cp $FW_DIR/*.tar.gz ../artifacts/ 2>/dev/null || true
+        cp $FW_DIR/*.zip ../artifacts/ 2>/dev/null || true
         cp build.log ../artifacts/
         cp .config ../artifacts/config.build.txt
         echo "DATE=$(date +%Y-%m-%d-%H%M)" >> $GITHUB_OUTPUT
@@ -174,6 +164,7 @@ jobs:
         name: ${{ env.DEVICE_NAME }}-firmware-${{ steps.organize.outputs.DATE }}
         path: artifacts/
         retention-days: 7
+        compression-level: 0
 
     - name: Create GitHub Release
       uses: ncipollo/release-action@v1
@@ -186,7 +177,7 @@ jobs:
         allowUpdates: true
         replacesArtifacts: true
         body: |
-          ## Nokia XG-140G-MD ImmortalWrt 固件
+          ## Nokia XG-140G-MD LEDE 固件
           
           | 项目 | 信息 |
           |------|------|
@@ -194,6 +185,12 @@ jobs:
           | PHY | 达发 EN8811H 2.5G |
           | Flash | 复旦微 FM25G02BI3 |
           | 管理地址 | http://192.168.1.1 |
+          | 源码 | Lean's LEDE (coolsnowwolf/lede) |
+          
+          ### 刷机说明
+          1. 下载对应固件文件
+          2. 通过路由器升级界面刷入
+          3. 首次刷机建议不保留配置
 
     - name: Debug SSH
       if: github.event.inputs.ssh == 'true'
