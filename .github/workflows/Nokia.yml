@@ -51,12 +51,31 @@ jobs:
           cd immortalwrt
           make download -j8
 
+      - name: Debug - Check directory structure
+        run: |
+          echo "=== Check immortalwrt directory ==="
+          ls -la immortalwrt/
+          echo "=== Check package directory ==="
+          ls -la immortalwrt/package/ 2>/dev/null || echo "package directory not found"
+          echo "=== Check base-files directory ==="
+          ls -la immortalwrt/package/base-files/ 2>/dev/null || echo "base-files directory not found"
+          echo "=== Current user ==="
+          whoami
+          echo "=== Disk space ==="
+          df -h
+
       - name: Copy custom config files
         run: |
-          # 先确保目录存在
+          # 检查目录是否存在
+          if [ ! -d "immortalwrt/package/base-files" ]; then
+            echo "ERROR: base-files directory not found!"
+            exit 1
+          fi
+          
+          # 创建目录
           mkdir -p immortalwrt/package/base-files/files/etc/config
           
-          # 复制自定义配置文件（如果存在）
+          # 复制自定义配置文件
           if [ -f "etc/config/network" ]; then
             cp etc/config/network immortalwrt/package/base-files/files/etc/config/
             echo "✅ Copied network config"
@@ -97,5 +116,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_number }}
-          path: immortalwrt/logs/
+          path: |
+            immortalwrt/logs/
+            immortalwrt/.config
           retention-days: 7
