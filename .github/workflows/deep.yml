@@ -49,43 +49,41 @@ jobs:
         mkdir -p files/etc/config
         mkdir -p files/etc
         # 写入 network 配置
-        cat > files/etc/config/network << 'EOF'
-config interface 'loopback'
-    option ifname 'lo'
-    option proto 'static'
-    option ipaddr '127.0.0.1'
-    option netmask '255.0.0.0'
-
-config interface 'lan'
-    option ifname 'eth0'
-    option proto 'static'
-    option ipaddr '192.168.1.1'
-    option netmask '255.255.255.0'
-    option ip6assign '60'
-
-config interface 'wan'
-    option ifname 'eth1'
-    option proto 'dhcp'
-
-config interface 'wan6'
-    option ifname 'eth1'
-    option proto 'dhcpv6'
-EOF
+        printf '%s\n' \
+          "config interface 'loopback'" \
+          "    option ifname 'lo'" \
+          "    option proto 'static'" \
+          "    option ipaddr '127.0.0.1'" \
+          "    option netmask '255.0.0.0'" \
+          "" \
+          "config interface 'lan'" \
+          "    option ifname 'eth0'" \
+          "    option proto 'static'" \
+          "    option ipaddr '192.168.1.1'" \
+          "    option netmask '255.255.255.0'" \
+          "    option ip6assign '60'" \
+          "" \
+          "config interface 'wan'" \
+          "    option ifname 'eth1'" \
+          "    option proto 'dhcp'" \
+          "" \
+          "config interface 'wan6'" \
+          "    option ifname 'eth1'" \
+          "    option proto 'dhcpv6'" \
+          > files/etc/config/network
         # 写入 shadow 配置
-        cat > files/etc/shadow << 'EOF'
-root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-daemon:*:0:0:99999:7:::
-ftp:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
+        printf '%s\n' \
+          "root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::" \
+          "daemon:*:0:0:99999:7:::" \
+          "ftp:*:0:0:99999:7:::" \
+          "nobody:*:0:0:99999:7:::" \
+          > files/etc/shadow
         echo "Custom network and shadow files created."
 
     - name: Copy custom config and apply patches
       run: |
         cd lede
-        # 复制用户提供的 .config
         cp ../${{ env.CONFIG_FILE }} .config
-        # 应用补丁（如有）
         if [ -d "../${{ env.PATCHES_DIR }}" ]; then
           for patch in ../${{ env.PATCHES_DIR }}/*.patch; do
             echo "Applying patch: $patch"
