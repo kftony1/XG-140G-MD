@@ -1,147 +1,104 @@
-# Nokia XG-140G-MD (AN7581) 专用云编译 - 无错最终版
 name: Build XG-140G-MD ImmortalWrt
 
 on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'ImmortalWrt 分支'
+        description: 'Branch'
         required: true
         default: 'master'
-        type: choice
-        options:
-          - master
-          - openwrt-23.05
 
 permissions:
   contents: write
   actions: read
-  packages: write
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt.git
   REPO_BRANCH: ${{ github.event.inputs.branch }}
   CONFIG_FILE: config/.config
   CUSTOM_SH: custom.sh
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
   DEVICE_TARGET: airoha
   DEVICE_SUBCMD: an7581
+  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 1400
+    timeout-minutes: 180
 
     steps:
-    - name: 检查仓库
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # ==================== 环境安装（已修复所有报错）====================
-    - name: 初始化编译环境
-      run: |
-        sudo sed -i "s/^#\s*deb-src/deb-src/g" /etc/apt/sources.list
-        sudo apt update -y
-        sudo apt upgrade -y
-        sudo apt remove -y needrestart
-        sudo apt autoremove -y
-        
-        # 修复依赖包，无错误版本
-        sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
-        libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev \
-        libtool libyaml-dev libz-dev lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf \
-        python3-pip python3-pyelftools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
-        uglifyjs unzip upx-ucl vim wget xmlto xxd zlib1g-dev
+      - name: 初始化环境（彻底屏蔽所有弹窗）
+        run: |
+          sudo apt-get remove -y needrestart
+          sudo apt-get purge -y needrestart
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt update -yq
+          sudo apt install -yq \
+            build-essential ccache curl flex g++-multilib gcc-multilib git \
+            libelf-dev libncurses5-dev libssl-dev libtool make cmake \
+            python3 python3-pip unzip wget cpio libfuse-dev \
+            patch libglib2.0-dev device-tree-compiler
+          sudo timedatectl set-timezone "$TZ"
 
-        sudo timedatectl set-timezone "$TZ"
-        sudo swapoff -a
-        sudo fallocate -l 16G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        df -h
+      - name: 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}
 
-    # ==================== 缓存 ====================
-    - name: 缓存源码与依赖
-      uses: actions/cache@v4
-      with:
-        path: |
-          openwrt/
-          !openwrt/.git/
-          !openwrt/tmp/
-          !openwrt/build_dir/
-          !openwrt/staging_dir/
-        key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}
+      - name: 拉取源码
+        run: |
+          git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-    # ==================== 拉取源码 ====================
-    - name: 拉取 ImmortalWrt 源码
-      run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: 加载配置
+        run: |
+          cp $CONFIG_FILE openwrt/.config
+          cd openwrt
+          make defconfig
 
-    # ==================== 加载配置 ====================
-    - name: 加载 .config
-      run: |
-        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
-        cd openwrt
-        make defconfig
+      - name: 下载依赖
+        run: |
+          cd openwrt
+          make download -j$(nproc)
 
-    # ==================== 下载依赖 ====================
-    - name: 下载安装包
-      run: |
-        cd openwrt
-        make download -j$(nproc)
-        find dl -size -1024c -exec rm -f {} \;
+      - name: 自定义配置
+        run: |
+          chmod +x $CUSTOM_SH
+          cd openwrt
+          ../$CUSTOM_SH
 
-    # ==================== 自定义脚本 ====================
-    - name: 运行自定义配置
-      run: |
-        chmod +x $CUSTOM_SH
-        cd openwrt
-        ../$CUSTOM_SH
+      - name: 编译固件
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
 
-    # ==================== 编译 ====================
-    - name: 开始编译固件
-      id: compile
-      run: |
-        cd openwrt
-        make -j$(nproc) || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
+      - name: 整理固件
+        id: organize
+        run: |
+          cd openwrt/bin/targets/airoha/an7581
+          rm -rf packages
+          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+          ls -la
 
-    # ==================== 整理固件（已修复目录）====================
-    - name: 整理固件文件
-      id: organize
-      if: success()
-      run: |
-        cd openwrt/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}
-        rm -rf packages
-        echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-        ls -la
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        with:
+          name: XG-140G-MD-固件
+          path: ${{ env.FIRMWARE_PATH }}
 
-    # ==================== 上传 ====================
-    - name: 上传固件到 Actions
-      uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success'
-      with:
-        name: 固件-XG-140G-MD-${{ env.REPO_BRANCH }}
-        path: ${{ env.FIRMWARE_PATH }}
-
-    - name: 上传到 Release
-      uses: softprops/action-gh-release@v2
-      if: success()
-      with:
-        name: Nokia XG-140G-MD 固件
-        tag_name: build-${{ github.run_number }}
-        files: ${{ env.FIRMWARE_PATH }}/*
-        body: |
-          设备：Nokia XG-140G-MD (AN7581 换壳)
-          驱动：xg-040g-md 兼容
-          显示：XG-140G-MD
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 上传 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: ${{ env.FIRMWARE_PATH }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
