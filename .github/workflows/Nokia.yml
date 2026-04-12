@@ -1,6 +1,6 @@
-name: 构建 ImmortalWrt 固件
+name: Build ImmortalWrt
 on:
-  workflow_dispatch:  # 手动触发编译（你要求的）
+  workflow_dispatch:
 
 jobs:
   build:
@@ -8,20 +8,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 检出仓库代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 安装编译依赖
+      - name: Install dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
-          mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
-          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      - name: 启用缓存加速（大幅缩短编译时间）
+      - name: Enable cache
         uses: actions/cache@v4
         with:
           path: |
@@ -29,107 +24,64 @@ jobs:
             immortalwrt/dl
             immortalwrt/feeds
           key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-immortalwrt-
+          restore-keys: |
+            ${{ runner.os }}-immortalwrt-
 
-      - name: 拉取 ImmortalWrt 官方源码
-        run: |
-          git clone --depth 1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
-          cd immortalwrt
+      - name: Clone source code
+        run: git clone --depth 1 https://github.com/immortalwrt/immortalwrt.git immortalwrt
 
-      - name: 更新 feeds 并安装软件包
+      - name: Update feeds
         run: |
           cd immortalwrt
           ./scripts/feeds clean
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 应用你仓库的编译配置
+      # ==============================================
+      # 核心：强制使用 你仓库根目录 /config/.config
+      # ==============================================
+      - name: Apply YOUR config from repo
         run: |
-          [ -f "config/.config" ] || exit 1
+          ls -la config/
           cp -f config/.config immortalwrt/.config
-
-      - name: 预置系统网络配置
+          
+      - name: Create network config
         run: |
           mkdir -p immortalwrt/files/etc/config
-          cat > immortalwrt/files/etc/config/network <<'EOF'
-config interface 'loopback'
-    option ifname 'lo'
-    option proto 'static'
-    option ipaddr '127.0.0.1'
-    option netmask '255.0.0.0'
+          printf "config interface 'loopback'\n    option ifname 'lo'\n    option proto 'static'\n    option ipaddr '127.0.0.1'\n    option netmask '255.0.0.0'\n\nconfig interface 'lan'\n    option ifname 'eth0'\n    option proto 'static'\n    option ipaddr '192.168.1.1'\n    option netmask '255.255.255.0'\n    option ip6assign '60'\n\nconfig interface 'wan'\n    option ifname 'eth1'\n    option proto 'dhcp'\n\nconfig interface 'wan6'\n    option ifname 'eth1'\n    option proto 'dhcpv6'\n" > immortalwrt/files/etc/config/network
 
-config interface 'lan'
-    option ifname 'eth0'
-    option proto 'static'
-    option ipaddr '192.168.1.1'
-    option netmask '255.255.255.0'
-    option ip6assign '60'
-
-config interface 'wan'
-    option ifname 'eth1'
-    option proto 'dhcp'
-
-config interface 'wan6'
-    option ifname 'eth1'
-    option proto 'dhcpv6'
-EOF
-
-      - name: 预置 root 密码
+      - name: Create passwd file
         run: |
           mkdir -p immortalwrt/files/etc
-          cat > immortalwrt/files/etc/passwd <<'EOF'
-root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-daemon:*:0:0:99999:7:::
-ftp:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
+          printf "root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::\ndaemon:*:0:0:99999:7:::\nftp:*:0:0:99999:7:::\nnobody:*:0:0:99999:7:::\n" > immortalwrt/files/etc/passwd
 
-      - name: 生成默认配置
+      - name: Generate config
         run: |
           cd immortalwrt
           make defconfig
 
-      - name: 开始编译固件
+      - name: Compile firmware
         id: compile
         run: |
           cd immortalwrt
-          make -j$(nproc) V=s 2>&1 | tee build.log || exit 1
+          make -j$(nproc) V=s 2>&1 | tee build.log
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 收集固件 + 生成下载页面
-        if: ${{ steps.compile.outputs.status == 'success' }}
+      - name: Prepare firmware
+        if: steps.compile.outputs.status == 'success'
         run: |
           mkdir -p firmware
-          find immortalwrt/bin/targets/ -type f -name "*immortalwrt*" | xargs -I {} mv {} firmware/
-          
-          # 生成带下载按钮的网页
-          cat > firmware/index.html <<'EOF'
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>ImmortalWrt 固件下载</title>
-<style>
-body{text-align:center;padding:40px;background:#f5f5f5;}
-.download{display:inline-block;background:#007bff;color:#fff;text-decoration:none;padding:14px 30px;border-radius:8px;margin:10px;font-size:16px;}
-.download:hover{background:#0056b3;}
-</style>
-</head>
-<body>
-<h1>✅ ImmortalWrt 固件编译完成</h1>
-<p>后台地址：192.168.1.1</p>
-<p>登录账号：root</p>
-EOF
-          for file in firmware/*; do
-            if [ -f "$file" ] && [[ "$file" != *.html ]]; then
-              name=$(basename "$file")
-              echo "<a class=\"download\" href=\"$name\" target=\"_blank\">📦 下载 $name</a>" >> firmware/index.html
+          find immortalwrt/bin/targets/ -type f -name "*immortalwrt*" -exec mv {} firmware/ \;
+          echo "<h1>Build Success</h1>" > firmware/index.html
+          for f in firmware/*; do
+            if [ -f "$f" ] && [[ ! $f == *.html ]]; then
+              name=$(basename "$f")
+              echo "<a href='$name'>Download $name</a><br>" >> firmware/index.html
             fi
           done
-          echo "</body></html>" >> firmware/index.html
 
-      - name: 上传固件 + 下载页面
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-固件
+          name: ImmortalWrt-Firmware
           path: firmware/
