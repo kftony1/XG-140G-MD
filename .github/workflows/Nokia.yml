@@ -32,6 +32,43 @@ jobs:
         run: |
           cp config/.config immortalwrt/.config
 
+      - name: Create files directory structure
+        run: |
+          # 创建 ImmortalWrt 的 files 目录（用于覆盖默认配置）
+          mkdir -p immortalwrt/files/etc/config
+          mkdir -p immortalwrt/files/etc
+
+      - name: Copy custom config files
+        run: |
+          # 复制网络配置
+          if [ -f "etc/config/network" ]; then
+            cp etc/config/network immortalwrt/files/etc/config/
+            echo "✅ Copied network config"
+          else
+            echo "⚠️ etc/config/network not found"
+          fi
+          
+          # 复制密码配置
+          if [ -f "etc/config/shadow" ]; then
+            cp etc/config/shadow immortalwrt/files/etc/config/
+            echo "✅ Copied shadow config"
+          else
+            echo "⚠️ etc/config/shadow not found"
+          fi
+          
+          # 复制网络脚本
+          if [ -f "network" ]; then
+            cp network immortalwrt/files/etc/
+            echo "✅ Copied network script"
+          else
+            echo "⚠️ network script not found"
+          fi
+
+      - name: Verify files copied
+        run: |
+          echo "=== Files in immortalwrt/files ==="
+          find immortalwrt/files -type f 2>/dev/null || echo "No files copied"
+
       - name: Update feeds
         run: |
           cd immortalwrt
@@ -50,46 +87,6 @@ jobs:
         run: |
           cd immortalwrt
           make download -j8
-
-      - name: Debug - Check directory structure
-        run: |
-          echo "=== Check immortalwrt directory ==="
-          ls -la immortalwrt/
-          echo "=== Check package directory ==="
-          ls -la immortalwrt/package/ 2>/dev/null || echo "package directory not found"
-          echo "=== Check base-files directory ==="
-          ls -la immortalwrt/package/base-files/ 2>/dev/null || echo "base-files directory not found"
-          echo "=== Current user ==="
-          whoami
-          echo "=== Disk space ==="
-          df -h
-
-      - name: Copy custom config files
-        run: |
-          # 检查目录是否存在
-          if [ ! -d "immortalwrt/package/base-files" ]; then
-            echo "ERROR: base-files directory not found!"
-            exit 1
-          fi
-          
-          # 创建目录
-          mkdir -p immortalwrt/package/base-files/files/etc/config
-          
-          # 复制自定义配置文件
-          if [ -f "etc/config/network" ]; then
-            cp etc/config/network immortalwrt/package/base-files/files/etc/config/
-            echo "✅ Copied network config"
-          fi
-          
-          if [ -f "etc/config/shadow" ]; then
-            cp etc/config/shadow immortalwrt/package/base-files/files/etc/config/
-            echo "✅ Copied shadow config"
-          fi
-          
-          if [ -f "network" ]; then
-            cp network immortalwrt/package/base-files/files/etc/
-            echo "✅ Copied network script"
-          fi
 
       - name: Validate configuration
         run: |
