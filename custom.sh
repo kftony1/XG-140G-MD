@@ -1,12 +1,8 @@
 #!/bin/bash
-# Nokia XG-040G-MD 自定义配置脚本
 
-# 进入固件根文件系统目录
-cd $GITHUB_WORKSPACE/openwrt/files || exit 0
+cd ${GITHUB_WORKSPACE}/openwrt/files || exit 0
 
-# ==============================================
-# 1. 写入网络配置文件 /etc/config/network
-# ==============================================
+# ===================== 网络配置 =====================
 mkdir -p etc/config
 cat > etc/config/network <<EOF
 config interface 'loopback'
@@ -31,9 +27,7 @@ config interface 'wan6'
     option proto 'dhcpv6'
 EOF
 
-# ==============================================
-# 2. 写入系统密码 /etc/shadow
-# ==============================================
+# ===================== 密码 shadow =====================
 cat > etc/shadow <<EOF
 root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
 daemon:*:0:0:99999:7:::
@@ -41,13 +35,15 @@ ftp:*:0:0:99999:7:::
 nobody:*:0:0:99999:7:::
 EOF
 
-# ==============================================
-# 3. 启用达发 2.5G PHY / 复旦微闪存 / USB 驱动
-# ==============================================
-sed -i 's/# CONFIG_PACKAGE_kmod-usb3 is not set/CONFIG_PACKAGE_kmod-usb3=y/' ../.config
-sed -i 's/# CONFIG_PACKAGE_kmod-usb2 is not set/CONFIG_PACKAGE_kmod-usb2=y/' ../.config
-sed -i 's/# CONFIG_PACKAGE_kmod-phy-realtek is not set/CONFIG_PACKAGE_kmod-phy-realtek=y/' ../.config
+# ===================== 强制型号显示为 XG-140G-MD =====================
+mkdir -p etc/board.d/
+cat > etc/board.d/01_override_model <<'EOF'
+#!/bin/sh
+echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
+echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
+EOF
+chmod +x etc/board.d/01_override_model
 
-# 权限修复
+# ===================== 权限 =====================
 chmod 644 etc/config/network
 chmod 600 etc/shadow
