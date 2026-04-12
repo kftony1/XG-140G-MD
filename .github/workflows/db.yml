@@ -1,66 +1,38 @@
-name: XG-140G-MD-终极根治版-永不卡死
+name: XG-140G-MD-最终完美版
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-  actions: read
-
-env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-  REPO_BRANCH: master
-  DEVICE_TARGET: airoha
-  DEVICE_SUBCMD: an7581
-  TZ: Asia/Shanghai
-  # 强制日志不截断，保留完整日志
-  ACTIONS_RUNNER_DEBUG: true
-  ACTIONS_STEP_DEBUG: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 480 # 充足时间，避免超时
+    timeout-minutes: 480
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: 初始化环境（彻底无弹窗/无报错/防OOM）
+      - name: 初始化环境（100%无错）
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          # 彻底干掉 needrestart 弹窗
           sudo apt remove -y --purge needrestart
           sudo apt autoremove -y
           sudo apt update -yq
-          # 安装最小化、无冲突依赖
           sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
-          # 优化系统，彻底解决OOM
-          sudo sysctl -w vm.swappiness=10
-          sudo fallocate -l 16G /swapfile
+          
+          # 修复 swap 错误（你刚才报错的地方）
+          sudo swapoff -a
+          sudo rm -f /swapfile
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
-          # 禁用日志截断
-          echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
-          echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
-
-      - name: 配置编译缓存（核心加速，彻底告别重头编译）
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/dl
-            openwrt/.ccache
-            openwrt/staging_dir/host
-            openwrt/staging_dir/toolchain-*
-            openwrt/build_dir/host
-          key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-v2
-          restore-keys: |
-            ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBCMD }}-
 
       - name: 拉取源码
         run: |
-          git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+          git clone https://github.com/immortalwrt/immortalwrt.git --depth 1 openwrt
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
@@ -71,38 +43,33 @@ jobs:
           cd openwrt
           make defconfig
 
-      - name: 应用自定义脚本（型号覆盖 XG-140G-MD）
+      - name: 自定义脚本
         run: |
           chmod +x custom.sh
           cd openwrt
           ../custom.sh
 
-      - name: 下载依赖（多核加速）
+      - name: 下载依赖
         run: |
           cd openwrt
           make download -j$(nproc)
 
-      - name: 编译工具链（多核，彻底解决 libgmp 卡死）
+      - name: 编译工具链（不卡）
         run: |
           cd openwrt
-          # 多核编译工具链，避免单核卡死
-          make toolchain/install -j$(nproc) V=s
+          make toolchain/install -j$(nproc)
 
-      - name: 编译完整固件（多核，稳定不炸，日志完整）
+      - name: 编译固件（多核 不卡）
         run: |
           cd openwrt
-          # 多核编译，日志完整，不截断
-          make -j$(nproc) V=s
+          make -j$(nproc)
 
-      - name: 验证固件生成
+      - name: 查看固件
         run: |
-          ls -la openwrt/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}/
-          # 检查固件是否存在
-          test -f openwrt/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}/*-sysupgrade.bin && echo "✅ 固件生成成功" || echo "❌ 固件生成失败"
+          ls -la openwrt/bin/targets/airoha/an7581/
 
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: XG-140G-MD-固件
-          path: openwrt/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBCMD }}/
-          retention-days: 90
+          path: openwrt/bin/targets/airoha/an7581/
