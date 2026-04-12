@@ -112,9 +112,25 @@ jobs:
     - name: Configure and download sources
       run: |
         cd openwrt
+        
+        # 清理旧的配置残留
+        echo "Cleaning old configuration..."
+        rm -f .config.old
+        
+        # 重新生成配置（这会修复路径问题）
+        echo "Running defconfig to generate proper configuration..."
         make defconfig
+        
+        # 下载依赖
+        echo "Downloading packages..."
         make download -j4
+        
+        # 检查无效下载
         find dl -size -1024c -exec rm -f {} \; || true
+        
+        # 显示当前配置的 target
+        echo "Current target configuration:"
+        grep "CONFIG_TARGET" .config | grep -v "^#" | head -20
 
     - name: Compile firmware (single core -j1 for stability)
       id: compile
@@ -127,20 +143,20 @@ jobs:
         echo "CPU cores: $(nproc)" | tee -a build.log
         echo "Memory: $(free -h | grep Mem)" | tee -a build.log
         echo "Disk space: $(df -h / | tail -1)" | tee -a build.log
+        echo "Current directory: $(pwd)" | tee -a build.log
         
-        # 使用单核编译，最稳定，避免资源竞争和死锁
+        # 使用单核编译，最稳定
         echo "Starting compilation with -j1 (single core)..." | tee -a build.log
         make -j1 V=s 2>&1 | tee -a build.log
         
-        # 检查编译结果
         if [ ${PIPESTATUS[0]} -eq 0 ]; then
           echo "status=success" >> $GITHUB_OUTPUT
           echo "=== Build completed successfully at $(date) ===" | tee -a build.log
         else
           echo "status=failed" >> $GITHUB_OUTPUT
           echo "=== Build failed at $(date) ===" | tee -a build.log
-          echo "Last 100 lines of build.log:" 
-          tail -n 100 build.log
+          echo "Last 200 lines of build.log:" 
+          tail -n 200 build.log
         fi
 
     - name: Show error log on failure
@@ -164,6 +180,7 @@ jobs:
         FIRMWARE_DIR=$(find bin/targets -type d -name "*-*" | head -1)
         if [ -z "$FIRMWARE_DIR" ]; then
           echo "Error: No firmware directory found!"
+          echo "Searching in bin/targets:"
           find bin/targets -type f 2>/dev/null || echo "bin/targets is empty"
           exit 1
         fi
