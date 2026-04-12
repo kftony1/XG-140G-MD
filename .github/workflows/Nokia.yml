@@ -32,42 +32,66 @@ jobs:
         run: |
           cp config/.config immortalwrt/.config
 
-      - name: Create files directory structure
+      - name: Create network config file
         run: |
-          # 创建 ImmortalWrt 的 files 目录（用于覆盖默认配置）
           mkdir -p immortalwrt/files/etc/config
+          cat > immortalwrt/files/etc/config/network << 'EOF'
+config interface 'loopback'
+    option ifname 'lo'
+    option proto 'static'
+    option ipaddr '127.0.0.1'
+    option netmask '255.0.0.0'
+
+config interface 'lan'
+    option ifname 'eth0'
+    option proto 'static'
+    option ipaddr '192.168.1.1'
+    option netmask '255.255.255.0'
+    option ip6assign '60'
+
+config interface 'wan'
+    option ifname 'eth1'
+    option proto 'dhcp'
+
+config interface 'wan6'
+    option ifname 'eth1'
+    option proto 'dhcpv6'
+EOF
+          echo "✅ Created network config"
+
+      - name: Create shadow file (password config)
+        run: |
+          mkdir -p immortalwrt/files/etc/config
+          cat > immortalwrt/files/etc/config/shadow << 'EOF'
+root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+EOF
+          echo "✅ Created shadow config"
+
+      - name: Create network script
+        run: |
           mkdir -p immortalwrt/files/etc
+          cat > immortalwrt/files/etc/network << 'EOF'
+#!/bin/sh
+# Custom network script
+# 自动启动网络接口
+ifup -a
+EOF
+          chmod +x immortalwrt/files/etc/network
+          echo "✅ Created network script"
 
-      - name: Copy custom config files
+      - name: Verify files created
         run: |
-          # 复制网络配置
-          if [ -f "etc/config/network" ]; then
-            cp etc/config/network immortalwrt/files/etc/config/
-            echo "✅ Copied network config"
-          else
-            echo "⚠️ etc/config/network not found"
-          fi
-          
-          # 复制密码配置
-          if [ -f "etc/config/shadow" ]; then
-            cp etc/config/shadow immortalwrt/files/etc/config/
-            echo "✅ Copied shadow config"
-          else
-            echo "⚠️ etc/config/shadow not found"
-          fi
-          
-          # 复制网络脚本
-          if [ -f "network" ]; then
-            cp network immortalwrt/files/etc/
-            echo "✅ Copied network script"
-          else
-            echo "⚠️ network script not found"
-          fi
-
-      - name: Verify files copied
-        run: |
-          echo "=== Files in immortalwrt/files ==="
-          find immortalwrt/files -type f 2>/dev/null || echo "No files copied"
+          echo "=== Created files ==="
+          find immortalwrt/files -type f
+          echo ""
+          echo "=== network config content ==="
+          cat immortalwrt/files/etc/config/network
+          echo ""
+          echo "=== shadow content ==="
+          cat immortalwrt/files/etc/config/shadow
 
       - name: Update feeds
         run: |
