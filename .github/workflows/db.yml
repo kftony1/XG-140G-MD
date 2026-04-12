@@ -1,0 +1,167 @@
+# Name
+name: Build ImmortalWrt for Nokia XG-140G-MD
+
+# Build on
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH Debug'
+        required: false
+        default: 'false'
+
+# Environment
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: master
+  DEVICE_NAME: Nokia-XG140G-MD
+  CONFIG_FILE: config/.config
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+# Jobs
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Initialization Environment
+        run: |
+          sudo apt update -y
+          sudo apt upgrade -y
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfreetype6-dev libgmp3-dev libltdl-dev \
+          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+          mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-pyelftools \
+          libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+          vim wget xmlto xxd zlib1g-dev
+          sudo timedatectl set-timezone "$TZ"
+          git config --global core.longpaths true
+
+      - name: Clone Source Code
+        run: |
+          git clone -b $REPO_BRANCH $REPO_URL openwrt
+          cd openwrt
+          mkdir -p files/etc/config
+          mkdir -p files/etc
+
+      - name: Apply Custom Config & Files
+        run: |
+          cd openwrt
+          # 加载你的.config配置
+          [ -f ../$CONFIG_FILE ] && cp -f ../$CONFIG_FILE .config
+          
+          # 写入网络配置 network
+          cat > files/etc/config/network <<EOF
+          config interface 'loopback'
+              option ifname 'lo'
+              option proto 'static'
+              option ipaddr '127.0.0.1'
+              option netmask '255.0.0.0'
+
+          config interface 'lan'
+              option ifname 'eth0'
+              option proto 'static'
+              option ipaddr '192.168.1.1'
+              option netmask '255.255.255.0'
+              option ip6assign '60'
+
+          config interface 'wan'
+              option ifname 'eth1'
+              option proto 'dhcp'
+
+          config interface 'wan6'
+              option ifname 'eth1'
+              option proto 'dhcpv6
+          EOF
+          
+          # 写入密码配置 shadow
+          cat > files/etc/shadow <<EOF
+          root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+          daemon:*:0:0:99999:7:::
+          ftp:*:0:0:99999:7:::
+          nobody:*:0:0:99999:7:::
+          EOF
+          
+          chmod 600 files/etc/shadow
+
+      - name: Update Feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Download Dependencies
+        run: |
+          cd openwrt
+          make defconfig
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Cache
+        uses: stupid-cat/cache@main
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ env.DEVICE_NAME }}-build-cache
+          restore-keys: |
+            ${{ env.DEVICE_NAME }}-build-cache
+
+      - name: Compile Firmware
+        id: compile
+        run: |
+          cd openwrt
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) V=s 2>&1 | tee build.log
+          echo "status=success" >> $GITHUB_OUTPUT
+          grep -i 'error' build.log | head -50
+
+      - name: Check Compile Error
+        if: steps.compile.outputs.status != 'success'
+        run: |
+          cd openwrt
+          tail -n 200 build.log
+          exit 1
+
+      - name: Organize Files
+        id: organize
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload Firmware
+        uses: actions/upload-artifact@main
+        if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
+        with:
+          name: ${{ env.DEVICE_NAME }}-firmware
+          path: ${{ env.FIRMWARE_PATH }}
+
+      - name: Generate Release
+        if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+        uses: ncipollo/release-action@main
+        with:
+          name: ${{ env.DEVICE_NAME }} 固件 ${{ env.DATE }}
+          tag: ${{ env.DEVICE_NAME }}-${{ env.DATE }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: ${{ env.FIRMWARE_PATH }}/*
+          allowUpdates: true
+          replacesArtifacts: true
+          body: |
+            设备：Nokia XG-140G-MD (AIRHOA AN7581)
+            架构：ARM A53
+            PHY：EN8811H 2.5G
+            Flash：复旦微 FM25G02BI3
+            USB：USB3.0/USB2.0
+            管理地址：192.168.1.1
