@@ -30,26 +30,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 初始化环境（彻底屏蔽所有弹窗）
+      - name: 初始化环境（彻底屏蔽弹窗 + 无错依赖）
         run: |
+          # ========== 永久禁用 needrestart 弹窗 ==========
+          export DEBIAN_FRONTEND=noninteractive
+          echo "needrestart needrestart/auto-restart-services boolean false" | sudo debconf-set-selections
+          echo "needrestart needrestart/auto-restart-sessions boolean false" | sudo debconf-set-selections
           sudo apt-get remove -y needrestart
           sudo apt-get purge -y needrestart
-          export DEBIAN_FRONTEND=noninteractive
+          
+          # ========== 更新软件源 ==========
           sudo apt update -yq
+          
+          # ========== 安装纯稳定依赖（无 libncursesw6-dev）==========
           sudo apt install -yq \
             build-essential ccache curl flex g++-multilib gcc-multilib git \
-            libelf-dev libncurses5-dev libssl-dev libtool make cmake \
-            python3 python3-pip unzip wget cpio libfuse-dev \
-            patch libglib2.0-dev device-tree-compiler
-          sudo timedatectl set-timezone "$TZ"
+            libncurses5-dev libssl-dev libelf-dev libfuse-dev device-tree-compiler \
+            cmake make python3 python3-pip unzip wget cpio rsync patch
 
-      - name: 缓存
+      - name: 缓存下载目录
         uses: actions/cache@v4
         with:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}
+          key: ${{ env.REPO_BRANCH }}-airoha-an7581
 
       - name: 拉取源码
         run: |
@@ -58,7 +63,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 加载配置
+      - name: 加载.config
         run: |
           cp $CONFIG_FILE openwrt/.config
           cd openwrt
@@ -69,7 +74,7 @@ jobs:
           cd openwrt
           make download -j$(nproc)
 
-      - name: 自定义配置
+      - name: 运行自定义脚本
         run: |
           chmod +x $CUSTOM_SH
           cd openwrt
@@ -86,7 +91,6 @@ jobs:
           cd openwrt/bin/targets/airoha/an7581
           rm -rf packages
           echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
           ls -la
 
       - name: 上传固件
@@ -95,7 +99,7 @@ jobs:
           name: XG-140G-MD-固件
           path: ${{ env.FIRMWARE_PATH }}
 
-      - name: 上传 Release
+      - name: 上传到Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
