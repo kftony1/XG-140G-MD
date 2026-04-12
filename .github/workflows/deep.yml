@@ -1,4 +1,4 @@
-# # .github/workflows/build.yml
+# .github/workflows/build.yml
 name: Build ImmortalWrt Firmware for Nokia XG-140G-MD
 
 on:
@@ -12,6 +12,7 @@ on:
     branches: [ main, master ]
     paths:
       - 'config/.config'
+      - 'custom.sh'
       - '.github/workflows/*.yml'
 
 env:
@@ -20,6 +21,7 @@ env:
   REPO_BRANCH: master
   DEVICE_NAME: Nokia-XG140G-MD
   CONFIG_FILE: config/.config
+  CUSTOM_SCRIPT: custom.sh
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
@@ -58,7 +60,16 @@ jobs:
         git clone --depth 1 --branch ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
         cd openwrt
 
-    - name: Apply custom config and files
+    - name: Set execute permission for custom.sh
+      run: |
+        if [ -f "${{ env.CUSTOM_SCRIPT }}" ]; then
+          chmod +x "${{ env.CUSTOM_SCRIPT }}"
+          echo "Execute permission granted to ${{ env.CUSTOM_SCRIPT }}"
+        else
+          echo "Warning: ${{ env.CUSTOM_SCRIPT }} not found"
+        fi
+
+    - name: Apply custom config and scripts
       run: |
         cd openwrt
         
@@ -71,59 +82,14 @@ jobs:
           exit 1
         fi
         
-        # ==================== custom.sh 脚本开始 ====================
-        echo "Running custom configuration..."
-        
-        # 创建 files 目录结构
-        mkdir -p files/etc/config
-        mkdir -p files/etc/board.d
-        
-        # 写入网络配置
-        cat > files/etc/config/network << 'EOF'
-config interface 'loopback'
-    option ifname 'lo'
-    option proto 'static'
-    option ipaddr '127.0.0.1'
-    option netmask '255.0.0.0'
-
-config interface 'lan'
-    option ifname 'eth0'
-    option proto 'static'
-    option ipaddr '192.168.1.1'
-    option netmask '255.255.255.0'
-    option ip6assign '60'
-
-config interface 'wan'
-    option ifname 'eth1'
-    option proto 'dhcp'
-
-config interface 'wan6'
-    option ifname 'eth1'
-    option proto 'dhcpv6'
-EOF
-        
-        # 写入密码配置
-        cat > files/etc/shadow << 'EOF'
-root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-daemon:*:0:0:99999:7:::
-ftp:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
-        
-        # 写入型号覆盖脚本
-        cat > files/etc/board.d/01_override_model << 'EOF'
-#!/bin/sh
-echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
-echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
-EOF
-        
-        # 设置权限
-        chmod +x files/etc/board.d/01_override_model
-        chmod 644 files/etc/config/network
-        chmod 600 files/etc/shadow
-        
-        echo "Custom configuration completed!"
-        # ==================== custom.sh 脚本结束 ====================
+        # 运行根目录的 custom.sh 脚本
+        if [ -f "../${{ env.CUSTOM_SCRIPT }}" ]; then
+          echo "Running custom.sh from repository root..."
+          bash "../${{ env.CUSTOM_SCRIPT }}"
+          echo "Custom script executed successfully."
+        else
+          echo "Warning: custom.sh not found at ${{ env.CUSTOM_SCRIPT }}, skipping..."
+        fi
 
     - name: Cache build artifacts
       uses: actions/cache@v4
@@ -236,8 +202,6 @@ EOF
           - **源码**: lwz322/immortalwrt-airoha (专门支持 AN7581)
           - **编译时间**: ${{ env.DATE }}
           - **管理地址**: http://192.168.1.1
-          - **用户名**: root
-          - **密码**: (您预设的密码)
           
           ## 刷机说明
           1. 下载对应固件文件
