@@ -1,0 +1,72 @@
+name: XG-140G-MD-AN7581-最终版
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 初始化环境（无弹窗·无错误·纯稳定）
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt remove -y needrestart
+          sudo apt update -yq
+          sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
+
+      - name: 拉取源码
+        run: |
+          git clone https://github.com/immortalwrt/immortalwrt.git --depth=1 openwrt
+
+      - name: 替换为正确的 AN7581 配置
+        run: |
+          cp config/.config openwrt/.config
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+
+      - name: 自定义脚本（型号覆盖）
+        run: |
+          chmod +x custom.sh
+          cd openwrt
+          ../custom.sh
+
+      - name: 下载依赖
+        run: |
+          cd openwrt
+          make download -j$(nproc) V=s
+
+      - name: 强制编译 AN7581 内核
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s || make -j1 V=s
+
+      - name: 整理固件
+        run: |
+          cd openwrt/bin/targets/airoha/an7581
+          rm -rf packages
+          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+          ls -la
+
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        with:
+          name: 固件-XG-140G-MD
+          path: ${{ env.FIRMWARE_PATH }}
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: ${{ env.FIRMWARE_PATH }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
