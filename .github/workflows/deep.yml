@@ -16,7 +16,6 @@ on:
       - '.github/workflows/*.yml'
 
 env:
-  # 使用专门支持 AIROHA AN7581 的仓库
   REPO_URL: https://github.com/lwz322/immortalwrt-airoha
   REPO_BRANCH: master
   DEVICE_NAME: Nokia-XG140G-MD
@@ -73,22 +72,17 @@ jobs:
       run: |
         cd openwrt
         
-        # 复制用户 .config 文件
         if [ -f "../${{ env.CONFIG_FILE }}" ]; then
           cp -f "../${{ env.CONFIG_FILE }}" .config
           echo "Custom .config applied."
         else
-          echo "Error: .config file not found at ${{ env.CONFIG_FILE }}"
+          echo "Error: .config file not found"
           exit 1
         fi
         
-        # 运行根目录的 custom.sh 脚本
         if [ -f "../${{ env.CUSTOM_SCRIPT }}" ]; then
-          echo "Running custom.sh from repository root..."
+          echo "Running custom.sh..."
           bash "../${{ env.CUSTOM_SCRIPT }}"
-          echo "Custom script executed successfully."
-        else
-          echo "Warning: custom.sh not found at ${{ env.CUSTOM_SCRIPT }}, skipping..."
         fi
 
     - name: Cache build artifacts
@@ -100,7 +94,6 @@ jobs:
           openwrt/build_dir
         key: ${{ env.DEVICE_NAME }}-build-${{ hashFiles('openwrt/.config') }}-${{ github.sha }}
         restore-keys: |
-          ${{ env.DEVICE_NAME }}-build-${{ hashFiles('openwrt/.config') }}-
           ${{ env.DEVICE_NAME }}-build-
 
     - name: Update feeds
@@ -112,95 +105,77 @@ jobs:
     - name: Configure and download sources
       run: |
         cd openwrt
-        
-        # 清理旧的配置残留
-        echo "Cleaning old configuration..."
         rm -f .config.old
-        
-        # 重新生成配置（这会修复路径问题）
-        echo "Running defconfig to generate proper configuration..."
         make defconfig
-        
-        # 下载依赖
-        echo "Downloading packages..."
         make download -j4
-        
-        # 检查无效下载
         find dl -size -1024c -exec rm -f {} \; || true
-        
-        # 显示当前配置的 target
-        echo "Current target configuration:"
-        grep "CONFIG_TARGET" .config | grep -v "^#" | head -20
 
-    - name: Compile firmware (single core -j1 for stability)
+    - name: Clean previous build (if stuck)
+      run: |
+        cd openwrt
+        # 如果上次编译卡住，清理可能有问题的包
+        if [ -f build.log ]; then
+          echo "Previous build log found, checking for stuck..."
+          if grep -q "erandom.lo" build.log; then
+            echo "Found stuck at erandom.lo, cleaning..."
+            rm -rf build_dir/target-*/*/erandom* 2>/dev/null || true
+          fi
+        fi
+
+    - name: Compile firmware with timeout protection
       id: compile
-      timeout-minutes: 360
+      timeout-minutes: 300
       run: |
         cd openwrt
         export PATH="/usr/lib/ccache:$PATH"
+        
         echo "=== Build started at $(date) ===" | tee build.log
         echo "System info:" | tee -a build.log
         echo "CPU cores: $(nproc)" | tee -a build.log
         echo "Memory: $(free -h | grep Mem)" | tee -a build.log
-        echo "Disk space: $(df -h / | tail -1)" | tee -a build.log
-        echo "Current directory: $(pwd)" | tee -a build.log
         
-        # 使用单核编译，最稳定
-        echo "Starting compilation with -j1 (single core)..." | tee -a build.log
-        make -j1 V=s 2>&1 | tee -a build.log
+        # 使用 timeout 命令，防止单个命令卡死
+        echo "Starting compilation with -j1..."
+        timeout 280m make -j1 V=s 2>&1 | tee -a build.log
         
-        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+        # 检查是否超时
+        if [ ${PIPESTATUS[0]} -eq 124 ]; then
+          echo "status=timeout" >> $GITHUB_OUTPUT
+          echo "=== Build TIMEOUT at $(date) ===" | tee -a build.log
+          exit 1
+        elif [ ${PIPESTATUS[0]} -eq 0 ]; then
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "=== Build completed successfully at $(date) ===" | tee -a build.log
+          echo "=== Build SUCCESS at $(date) ===" | tee -a build.log
         else
           echo "status=failed" >> $GITHUB_OUTPUT
-          echo "=== Build failed at $(date) ===" | tee -a build.log
-          echo "Last 200 lines of build.log:" 
-          tail -n 200 build.log
+          echo "=== Build FAILED at $(date) ===" | tee -a build.log
         fi
 
     - name: Show error log on failure
-      if: steps.compile.outputs.status == 'failed'
+      if: steps.compile.outputs.status != 'success'
       run: |
         cd openwrt
-        echo "========== Last 500 lines of build.log =========="
+        echo "========== Last 500 lines =========="
         tail -n 500 build.log
-        echo "========== Firmware directory listing =========="
-        ls -la bin/targets/ 2>/dev/null || echo "No firmware output found"
-        echo "========== Check for common errors =========="
-        grep -i "error\|failed\|missing" build.log | tail -n 50 || echo "No error patterns found"
+        echo "========== Error patterns =========="
+        grep -E "error:|Error:|failed:|Missing:" build.log | tail -n 30 || echo "No errors found"
 
     - name: Collect firmware files
       id: organize
       if: steps.compile.outputs.status == 'success'
       run: |
         cd openwrt
-        
-        # 查找固件目录
         FIRMWARE_DIR=$(find bin/targets -type d -name "*-*" | head -1)
         if [ -z "$FIRMWARE_DIR" ]; then
-          echo "Error: No firmware directory found!"
-          echo "Searching in bin/targets:"
-          find bin/targets -type f 2>/dev/null || echo "bin/targets is empty"
+          echo "No firmware directory found!"
           exit 1
         fi
-        
         mkdir -p ../artifacts
-        
-        # 复制固件文件
-        find "$FIRMWARE_DIR" -type f \( -name "*.bin" -o -name "*.img" -o -name "*.itb" -o -name "*.tar.gz" -o -name "*.elf" -o -name "*.dtb" \) -exec cp {} ../artifacts/ \;
-        
-        # 复制编译日志和配置
+        find "$FIRMWARE_DIR" -type f \( -name "*.bin" -o -name "*.img" -o -name "*.itb" -o -name "*.tar.gz" \) -exec cp {} ../artifacts/ \;
         cp build.log ../artifacts/
         cp .config ../artifacts/config.build.txt
-        
-        # 列出复制的文件
-        echo "Copied firmware files:"
-        ls -la ../artifacts/
-        
-        echo "FIRMWARE_PATH=$(pwd)/$FIRMWARE_DIR" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +%Y-%m-%d-%H%M)" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware artifacts
       uses: actions/upload-artifact@v4
@@ -210,7 +185,6 @@ jobs:
         path: artifacts/
         retention-days: 7
         compression-level: 0
-        if-no-files-found: error
 
     - name: Create GitHub Release
       uses: ncipollo/release-action@v1
@@ -227,20 +201,9 @@ jobs:
           - **型号**: Nokia XG-140G-MD
           - **SoC**: AIROHA AN7581 (ARM Cortex-A53)
           - **PHY**: 达发 EN8811H 2.5G
-          - **Flash**: 复旦微 FM25G02BI3
-          - **USB**: USB 3.0 / USB 2.0
-          
-          ## 固件信息
-          - **源码**: lwz322/immortalwrt-airoha (专门支持 AN7581)
-          - **编译时间**: ${{ env.DATE }}
           - **管理地址**: http://192.168.1.1
-          
-          ## 刷机说明
-          1. 下载对应固件文件
-          2. 通过路由器升级界面刷入
-          3. 首次刷机建议不保留配置
 
-    - name: Debug SSH (manual trigger only)
+    - name: Debug SSH
       if: github.event.inputs.ssh == 'true'
       uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 30
+      timeout-minutes: 60
