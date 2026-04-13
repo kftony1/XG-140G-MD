@@ -1,4 +1,4 @@
-name: Build_XG-140G-MD_AN7581
+name: Build_XG-040G-MD_AN7581
 
 on:
   workflow_dispatch:
@@ -36,19 +36,19 @@ jobs:
       - name: Show system info
         run: df -h && free -h && nproc
 
-      - name: Initialization environment
+      - name: 安装依赖环境
         run: |
           sudo apt update -y
           sudo apt install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
 
-      - name: Install CMake
+      - name: 安装CMake
         run: |
           wget -q https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
           tar xf cmake-3.31.5-linux-x86_64.tar.gz
           sudo cp -rf cmake-3.31.5-linux-x86_64/{bin,share} /usr/
           cmake --version
 
-      - name: Clone OpenWrt
+      - name: 克隆OpenWrt源码
         run: |
           git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
           cd openwrt
@@ -59,7 +59,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Write network & shadow
+      - name: 写入network和shadow配置
         run: |
           cd openwrt
           mkdir -p files/etc/config
@@ -90,12 +90,12 @@ jobs:
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: Write full .config
+      - name: 写入完整.config
         run: |
           cd openwrt
           echo "CONFIG_TARGET_airoha=y" > .config
           echo "CONFIG_TARGET_airoha_an7581=y" >> .config
-          echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
+          echo "# CONFIG_TARGET_MULTI_PROFILE is not set" >> .config
           echo "CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md=y" >> .config
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=512" >> .config
           echo "CONFIG_BUSYBOX_CONFIG_FEATURE_TOP_SMP_CPU=y" >> .config
@@ -182,24 +182,25 @@ jobs:
           echo "CONFIG_DROPBEAR_CURVE25519=y" >> .config
           make defconfig
 
-      - name: Download dependencies
+      - name: 下载依赖
         run: |
           cd openwrt
           make download -j$(nproc)
 
-      - name: Build
+      - name: 开始编译固件
         run: |
           cd openwrt
-          make -j$(nproc) V=s 2>&1 | tee build.log
+          script -q -c "make -j$(nproc) V=s 2>&1" build.log
+        shell: bash
 
-      - name: Upload log
+      - name: 上传完整编译日志
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
 
-      - name: Upload firmware
+      - name: 上传固件文件
         uses: actions/upload-artifact@v4
         with:
-          name: XG-140G-MD_Firmware
+          name: XG-040G-MD_Firmware
           path: openwrt/bin/targets/airoha/
