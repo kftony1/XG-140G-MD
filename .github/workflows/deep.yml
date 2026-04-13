@@ -29,7 +29,7 @@ jobs:
             gettext unzip file python3 python3-distutils rsync qemu-utils zstd \
             libssl-dev libelf-dev wget swig
           
-          # 移除可能存在的旧版 CMake
+          # 移除旧版 CMake
           sudo apt remove -y cmake || true
           sudo rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
           
@@ -38,9 +38,8 @@ jobs:
           sudo tar -xzf cmake-3.31.5-linux-x86_64.tar.gz -C /usr/local --strip-components=1
           rm cmake-3.31.5-linux-x86_64.tar.gz
           
-          # 强制添加到 PATH
-          export PATH="/usr/local/bin:$PATH"
           echo "/usr/local/bin" >> $GITHUB_PATH
+          export PATH="/usr/local/bin:$PATH"
           
           echo ">>> CMake 版本："
           cmake --version
@@ -55,8 +54,6 @@ jobs:
         run: |
           set -e
           export PATH="/usr/local/bin:$PATH"
-          echo ">>> 当前 CMake 版本："
-          cmake --version
           
           git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
           cd openwrt
@@ -70,14 +67,22 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 5. 应用用户自定义配置文件 (.config)
+      - name: 5. 应用用户自定义配置文件 (.config) 并删除有问题的包
         run: |
           set -e
+          export PATH="/usr/local/bin:$PATH"
+          
           echo ">>> 复制用户 .config 文件..."
           cp ${{ github.workspace }}/config/.config ${{ github.workspace }}/openwrt/.config
           cd ${{ github.workspace }}/openwrt
+          
           echo ">>> 执行 make defconfig..."
           make defconfig
+          
+          echo ">>> 强制删除有问题的 rpcd-mod-luci 包..."
+          rm -rf feeds/luci/libs/rpcd-mod-luci
+          rm -rf package/feeds/luci/rpcd-mod-luci
+          
           echo ">>> 配置检查完成"
 
       - name: 6. 执行自定义脚本 (custom.sh)
