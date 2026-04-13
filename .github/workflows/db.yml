@@ -14,19 +14,21 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 初始化环境（100%无错 无swap）
+      # ==================== 完全无报错环境 ====================
+      - name: 初始化环境
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          sudo apt remove -y --purge needrestart
-          sudo apt autoremove -y
+          sudo apt remove -y needrestart
           sudo apt update -yq
-          sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
+          sudo apt install -y build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
 
+      # ==================== 拉取源码 ====================
       - name: 拉取源码
         run: |
-          git clone https://github.com/immortalwrt/immortalwrt.git --depth 1 openwrt
+          git clone https://github.com/immortalwrt/immortalwrt.git --depth=1 openwrt
 
-      - name: 加载配置
+      # ==================== 加载配置 ====================
+      - name: 应用配置
         run: |
           cp config/.config openwrt/.config
           cd openwrt
@@ -34,33 +36,30 @@ jobs:
           ./scripts/feeds install -a
           make defconfig
 
+      # ==================== 自定义脚本 ====================
       - name: 自定义脚本
         run: |
           chmod +x custom.sh
           cd openwrt
           ../custom.sh
 
+      # ==================== 下载 & 编译 ====================
       - name: 下载依赖
         run: |
           cd openwrt
           make download -j$(nproc)
-
-      - name: 编译工具链
-        run: |
-          cd openwrt
-          make toolchain/install -j$(nproc)
 
       - name: 编译固件
         run: |
           cd openwrt
           make -j$(nproc)
 
+      # ==================== 上传固件 ====================
       - name: 查看固件
-        run: |
-          ls -la openwrt/bin/targets/airoha/an7581/
+        run: ls -la openwrt/bin/targets/airoha/an7581/
 
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: XG-140G-MD-固件
+          name: 固件-XG-140G-MD
           path: openwrt/bin/targets/airoha/an7581/
