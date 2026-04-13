@@ -29,13 +29,18 @@ jobs:
             gettext unzip file python3 python3-distutils rsync qemu-utils zstd \
             libssl-dev libelf-dev wget swig
           
-          # 移除旧版 CMake
+          # 移除可能存在的旧版 CMake
           sudo apt remove -y cmake || true
+          sudo rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
           
-          # 从 GitHub 下载 CMake 3.31.5 二进制包（更可靠）
+          # 从 GitHub 下载 CMake 3.31.5 二进制包
           wget -q https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
           sudo tar -xzf cmake-3.31.5-linux-x86_64.tar.gz -C /usr/local --strip-components=1
           rm cmake-3.31.5-linux-x86_64.tar.gz
+          
+          # 强制添加到 PATH
+          export PATH="/usr/local/bin:$PATH"
+          echo "/usr/local/bin" >> $GITHUB_PATH
           
           echo ">>> CMake 版本："
           cmake --version
@@ -49,6 +54,10 @@ jobs:
       - name: 4. 克隆 Ansuel 大神 OpenWrt 分支（AN7581 驱动与补丁）
         run: |
           set -e
+          export PATH="/usr/local/bin:$PATH"
+          echo ">>> 当前 CMake 版本："
+          cmake --version
+          
           git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
           cd openwrt
           
@@ -87,6 +96,10 @@ jobs:
         working-directory: openwrt
         run: |
           set -e
+          export PATH="/usr/local/bin:$PATH"
+          echo ">>> 编译前 CMake 版本确认："
+          cmake --version
+          
           make -j$(nproc) || make -j1 V=s
 
       - name: 9. 打包固件并准备上传
