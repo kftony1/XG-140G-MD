@@ -66,46 +66,43 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 执行自定义配置（network + shadow + 型号显示）
+      - name: 写入 network 和 shadow 配置
         run: |
-          OPENWRT_DIR="$PWD/openwrt"
-          cd "$OPENWRT_DIR" || exit 1
+          cd openwrt
           mkdir -p files/etc/config
-          mkdir -p files/etc/board.d/
-          cat > files/etc/config/network <<'EOF'
+          mkdir -p files/etc
+          # 写入 network
+          cat <<-'EOF' > files/etc/config/network
           config interface 'loopback'
               option ifname 'lo'
               option proto 'static'
               option ipaddr '127.0.0.1'
               option netmask '255.0.0.0'
+
           config interface 'lan'
               option ifname 'eth0'
               option proto 'static'
               option ipaddr '192.168.1.1'
               option netmask '255.255.255.0'
               option ip6assign '60'
+
           config interface 'wan'
               option ifname 'lan1'
               option proto 'dhcp'
+
           config interface 'wan6'
               option ifname 'lan1'
               option proto 'dhcpv6'
           EOF
-          cat > files/etc/shadow <<'EOF'
+          # 写入 shadow
+          cat <<-'EOF' > files/etc/shadow
           root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
           daemon:*:0:0:99999:7:::
           ftp:*:0:0:99999:7:::
           nobody:*:0:0:99999:7:::
           EOF
-          cat > files/etc/board.d/01_override_model <<'EOF'
-          #!/bin/sh
-          echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
-          echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
-          EOF
-          chmod +x files/etc/board.d/01_override_model
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
-          echo ">>> 内置 custom.sh 执行完成！"
 
       - name: 加载 .config
         run: |
