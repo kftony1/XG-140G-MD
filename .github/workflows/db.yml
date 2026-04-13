@@ -2,10 +2,20 @@ name: Build_XG-040G-MD_AN7581
 
 on:
   workflow_dispatch:
+    inputs:
+      openwrt_repo:
+        description: 'OpenWrt 源码仓库'
+        required: true
+        default: 'https://github.com/Ansuel/openwrt.git'
+        type: string
+      openwrt_branch:
+        description: 'OpenWrt 源码分支'
+        required: true
+        default: 'openwrt-24.10-airoha-an7581-stable'
+        type: string
 
 env:
   CONFIG_FILE: config/.config
-  CUSTOM_SH: custom.sh
   TZ: Asia/Shanghai
 
 jobs:
@@ -43,11 +53,10 @@ jobs:
           sudo cp -rf cmake-3.31.5-linux-x86_64/share/* /usr/share/
           cmake --version
 
-      # ========== 已按你要求修改地址 ==========
-      - name: 克隆 Ansuel 大神 OpenWrt 分支（AN7581 驱动与补丁）
+      - name: 克隆 AN7581 源码 + 配置 ImmortalWrt feeds
         run: |
           set -e
-          git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
+          git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
           cd openwrt
           
           cp feeds.conf.default feeds.conf.default.bak
@@ -59,30 +68,77 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Run custom.sh
+      # ===================== 内置完整 custom.sh 脚本 =====================
+      - name: 执行自定义配置（network + shadow + 型号显示）
         run: |
-          chmod +x $CUSTOM_SH
-          mv $CUSTOM_SH openwrt/
-          cd openwrt
-          ./$CUSTOM_SH
+          OPENWRT_DIR="$PWD/openwrt"
+          cd "$OPENWRT_DIR" || exit 1
+          
+          mkdir -p files/etc/config
+          mkdir -p files/etc/board.d/
+          
+          # 网络配置
+          cat > files/etc/config/network <<'EOF'
+          config interface 'loopback'
+              option ifname 'lo'
+              option proto 'static'
+              option ipaddr '127.0.0.1'
+              option netmask '255.0.0.0'
+          
+          config interface 'lan'
+              option ifname 'eth0'
+              option proto 'static'
+              option ipaddr '192.168.1.1'
+              option netmask '255.255.255.0'
+              option ip6assign '60'
+          
+          config interface 'wan'
+              option ifname 'lan1'
+              option proto 'dhcp'
+          
+          config interface 'wan6'
+              option ifname 'lan1'
+              option proto 'dhcpv6'
+          EOF
+          
+          # 密码 root / password
+          cat > files/etc/shadow <<'EOF'
+          root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+          daemon:*:0:0:99999:7:::
+          ftp:*:0:0:99999:7:::
+          nobody:*:0:0:99999:7:::
+          EOF
+          
+          # 型号显示 Nokia XG-140G-MD
+          cat > files/etc/board.d/01_override_model <<'EOF'
+          #!/bin/sh
+          echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
+          echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
+          EOF
+          
+          chmod +x files/etc/board.d/01_override_model
+          chmod 644 files/etc/config/network
+          chmod 600 files/etc/shadow
+          
+          echo ">>> 内置 custom.sh 执行完成！"
 
-      - name: Load config
+      - name: 加载 .config
         run: |
           cd openwrt
           cp -f ../$CONFIG_FILE .config
           make defconfig
 
-      - name: Download dependencies
+      - name: 下载依赖
         run: |
           cd openwrt
           make download -j4
 
-      - name: Build firmware
+      - name: 开始编译
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: Upload firmware
+      - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: XG-040G-MD_Firmware
