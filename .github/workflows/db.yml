@@ -60,11 +60,11 @@ jobs:
           cd openwrt
           rm -f feeds.conf
           cat > feeds.conf <<EOF
-src-git packages https://github.com/immortalwrt/packages.git
-src-git luci https://github.com/immortalwrt/luci.git
-src-git routing https://github.com/immortalwrt/routing.git
-src-git telephony https://github.com/immortalwrt/telephony.git
-EOF
+          src-git packages https://github.com/immortalwrt/packages.git
+          src-git luci https://github.com/immortalwrt/luci.git
+          src-git routing https://github.com/immortalwrt/routing.git
+          src-git telephony https://github.com/immortalwrt/telephony.git
+          EOF
           cat feeds.conf
 
       - name: 更新并安装 feeds
