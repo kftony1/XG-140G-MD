@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ssh:
-        description: 'SSH 调试'
+        description: 'SSH Debug'
         required: false
         default: false
         type: boolean
@@ -37,7 +37,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -y && sudo apt-get upgrade -y
+          sudo apt-get update -y
           sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
           sudo apt-get autoremove -y && sudo apt-get clean
 
@@ -87,7 +87,7 @@ jobs:
 
       - name: SSH debug
         if: github.event.inputs.ssh == 'true'
-        uses: mxschmitt/action-tmate@main
+        uses: mxschmitt/action-tmate@v3
 
       - name: Build firmware
         run: |
