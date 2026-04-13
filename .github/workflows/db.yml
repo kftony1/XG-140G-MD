@@ -58,68 +58,53 @@ jobs:
           set -e
           git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
           cd openwrt
-          
           cp feeds.conf.default feeds.conf.default.bak
           echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
           echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
           echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf.default
           echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf.default
-          
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ===================== 内置完整 custom.sh 脚本 =====================
       - name: 执行自定义配置（network + shadow + 型号显示）
         run: |
           OPENWRT_DIR="$PWD/openwrt"
           cd "$OPENWRT_DIR" || exit 1
-          
           mkdir -p files/etc/config
           mkdir -p files/etc/board.d/
-          
-          # 网络配置
           cat > files/etc/config/network <<'EOF'
           config interface 'loopback'
               option ifname 'lo'
               option proto 'static'
               option ipaddr '127.0.0.1'
               option netmask '255.0.0.0'
-          
           config interface 'lan'
               option ifname 'eth0'
               option proto 'static'
               option ipaddr '192.168.1.1'
               option netmask '255.255.255.0'
               option ip6assign '60'
-          
           config interface 'wan'
               option ifname 'lan1'
               option proto 'dhcp'
-          
           config interface 'wan6'
               option ifname 'lan1'
               option proto 'dhcpv6'
           EOF
-          
-          # 密码 root / password
           cat > files/etc/shadow <<'EOF'
           root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
           daemon:*:0:0:99999:7:::
           ftp:*:0:0:99999:7:::
           nobody:*:0:0:99999:7:::
           EOF
-          
-          # 型号显示 Nokia XG-140G-MD
           cat > files/etc/board.d/01_override_model <<'EOF'
           #!/bin/sh
           echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
           echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
           EOF
-          
           chmod +x files/etc/board.d/01_override_model
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
-          
           echo ">>> 内置 custom.sh 执行完成！"
 
       - name: 加载 .config
