@@ -9,7 +9,7 @@ on:
         default: 'https://github.com/Ansuel/openwrt.git'
         type: string
       openwrt_branch:
-        description: 'OpenWrt 源码分支'
+        description: 'OpenWrt 分支'
         required: true
         default: 'openwrt-24.10-airoha-an7581-stable'
         type: string
@@ -17,9 +17,6 @@ on:
 env:
   CONFIG_FILE: config/.config
   TZ: Asia/Shanghai
-  # 🔥 防止日志截断
-  ACTIONS_RUNNER_HOOK_JOB_STARTED: /usr/bin/true
-  BUILD_LOG: true
 
 jobs:
   build:
@@ -28,7 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔥 最大化释放磁盘空间（防编译失败）
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -37,106 +33,92 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-          swap-storage: true
 
       - name: Show system info
         run: df -h && free -h && nproc
 
-      # 🔥 开启 OpenWrt 编译缓存（大幅提速）
-      - name: Cache OpenWrt Build
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/.ccache
-            openwrt/staging_dir
-            openwrt/build_dir
-          key: ${{ runner.os }}-openwrt-${{ hashFiles(env.CONFIG_FILE) }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-
-
       - name: Initialization environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
-          sudo apt-get autoremove -y && sudo apt-get clean
+          sudo apt update -y
+          sudo apt install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
 
-      - name: Install CMake 3.31.5
+      - name: Install CMake
         run: |
-          wget https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
-          tar -zxf cmake-3.31.5-linux-x86_64.tar.gz
-          sudo cp -rf cmake-3.31.5-linux-x86_64/bin/* /usr/bin/
-          sudo cp -rf cmake-3.31.5-linux-x86_64/share/* /usr/share/
+          wget -q https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
+          tar xf cmake-3.31.5-linux-x86_64.tar.gz
+          sudo cp -rf cmake-3.31.5-linux-x86_64/{bin,share} /usr/
           cmake --version
 
-      - name: 克隆 AN7581 源码
+      - name: Clone OpenWrt
         run: |
-          set -e
           git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
           cd openwrt
-          cp feeds.conf.default feeds.conf.default.bak
-          echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
-          echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
-          echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf.default
-          echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf.default
+          cp feeds.conf.default feeds.conf
+          echo "src-git packages https://github.com/immortalwrt/packages.git;master" >> feeds.conf
+          echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf
+          echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf
+          echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 写入 network + shadow 配置
+      - name: Write network & shadow
         run: |
           cd openwrt
           mkdir -p files/etc/config
-          cat <<-'EOF' > files/etc/config/network
-config interface 'loopback'
-    option ifname 'lo'
-    option proto 'static'
-    option ipaddr '127.0.0.1'
-    option netmask '255.0.0.0'
-
-config interface 'lan'
-    option ifname 'eth0'
-    option proto 'static'
-    option ipaddr '192.168.1.1'
-    option netmask '255.255.255.0'
-    option ip6assign '60'
-
-config interface 'wan'
-    option ifname 'lan1'
-    option proto 'dhcp'
-
-config interface 'wan6'
-    option ifname 'lan1'
-    option proto 'dhcpv6'
-EOF
-          cat <<-'EOF' > files/etc/shadow
-root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-daemon:*:0:0:99999:7:::
-ftp:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
+          # 写入 network 配置
+          mkdir -p files/etc/config
+          echo "config interface 'loopback'" > files/etc/config/network
+          echo "    option ifname 'lo'" >> files/etc/config/network
+          echo "    option proto 'static'" >> files/etc/config/network
+          echo "    option ipaddr '127.0.0.1'" >> files/etc/config/network
+          echo "    option netmask '255.0.0.0'" >> files/etc/config/network
+          echo "" >> files/etc/config/network
+          echo "config interface 'lan'" >> files/etc/config/network
+          echo "    option ifname 'eth0'" >> files/etc/config/network
+          echo "    option proto 'static'" >> files/etc/config/network
+          echo "    option ipaddr '192.168.1.1'" >> files/etc/config/network
+          echo "    option netmask '255.255.255.0'" >> files/etc/config/network
+          echo "    option ip6assign '60'" >> files/etc/config/network
+          echo "" >> files/etc/config/network
+          echo "config interface 'wan'" >> files/etc/config/network
+          echo "    option ifname 'lan1'" >> files/etc/config/network
+          echo "    option proto 'dhcp'" >> files/etc/config/network
+          echo "" >> files/etc/config/network
+          echo "config interface 'wan6'" >> files/etc/config/network
+          echo "    option ifname 'lan1'" >> files/etc/config/network
+          echo "    option proto 'dhcpv6'" >> files/etc/config/network
+          # 写入 shadow 配置
+          echo "root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::" > files/etc/shadow
+          echo "daemon:*:0:0:99999:7:::" >> files/etc/shadow
+          echo "ftp:*:0:0:99999:7:::" >> files/etc/shadow
+          echo "nobody:*:0:0:99999:7:::" >> files/etc/shadow
+          # 设置权限
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: 加载 .config
+      - name: Load config
         run: |
           cd openwrt
-          cp -f ../$CONFIG_FILE .config
+          cp ../$CONFIG_FILE .config
           make defconfig
 
-      - name: 下载依赖
+      - name: Download dependencies
         run: |
           cd openwrt
-          make download -j4
+          make download -j$(nproc)
 
-      # 🔥 防日志截断 + 编译优化
-      - name: 开始编译
+      - name: Build
         run: |
           cd openwrt
-          script -e -c "make -j$(nproc) || make -j1 V=s" build.log
-        shell: bash
+          make -j$(nproc) V=s 2>&1 | tee build.log
 
-      - name: 上传固件
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: openwrt/build.log
+
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: XG-140G-MD_Firmware
