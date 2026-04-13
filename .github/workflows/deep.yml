@@ -29,11 +29,14 @@ jobs:
             gettext unzip file python3 python3-distutils rsync qemu-utils zstd \
             libssl-dev libelf-dev wget swig
           
-          # 安装 CMake 3.31+（从 Kitware 官方仓库）
-          wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo apt-key add -
-          sudo apt-add-repository -y 'deb https://apt.kitware.com/ubuntu/ jammy main'
-          sudo apt update
-          sudo apt install -y cmake
+          # 移除旧版 CMake
+          sudo apt remove -y cmake || true
+          
+          # 从 GitHub 下载 CMake 3.31.5 二进制包（更可靠）
+          wget -q https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
+          sudo tar -xzf cmake-3.31.5-linux-x86_64.tar.gz -C /usr/local --strip-components=1
+          rm cmake-3.31.5-linux-x86_64.tar.gz
+          
           echo ">>> CMake 版本："
           cmake --version
 
@@ -49,7 +52,6 @@ jobs:
           git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
           cd openwrt
           
-          # 替换 feeds 为 ImmortalWrt 源
           cp feeds.conf.default feeds.conf.default.bak
           echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
           echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
