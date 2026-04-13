@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
@@ -95,7 +95,7 @@ jobs:
           make -j$(nproc) || make -j1 V=s
 
       - name: Upload firmware
-        uses: actions/upload-artifact@main
+        uses: actions/upload-artifact@v4
         with:
           name: XG-040G-MD_Firmware
           path: openwrt/bin/targets/
