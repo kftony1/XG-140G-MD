@@ -38,12 +38,11 @@ jobs:
           sudo tar -xzf cmake-3.31.5-linux-x86_64.tar.gz -C /usr/local --strip-components=1
           rm cmake-3.31.5-linux-x86_64.tar.gz
           
-          # 强制覆盖系统默认 cmake（确保优先级最高）
+          # 强制覆盖系统默认 cmake
           sudo ln -sf /usr/local/bin/cmake /usr/bin/cmake
           sudo ln -sf /usr/local/bin/ctest /usr/bin/ctest
           sudo ln -sf /usr/local/bin/cpack /usr/bin/cpack
           
-          # 写入环境变量，并将 /usr/local/bin 放在 PATH 最前面
           echo "/usr/local/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           export PATH="/usr/local/bin:$PATH"
@@ -67,15 +66,16 @@ jobs:
           cd openwrt
           
           cp feeds.conf.default feeds.conf.default.bak
-          echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
-          echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
-          echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf.default
-          echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf.default
+          # 使用与 openwrt-24.10 兼容的 ImmortalWrt feeds 分支
+          echo "src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git routing https://github.com/openwrt/routing.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10" >> feeds.conf.default
           
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 5. 应用用户自定义配置文件并删除有问题的包
+      - name: 5. 应用用户自定义配置文件并启用必要依赖
         run: |
           set -e
           export PATH="/usr/local/bin:$PATH"
@@ -84,14 +84,12 @@ jobs:
           cp ${{ github.workspace }}/config/.config ${{ github.workspace }}/openwrt/.config
           cd ${{ github.workspace }}/openwrt
           
+          # 显式启用 rpcd-mod-luci 和 rpcd-mod-rrdns（确保它们被编译）
+          ./scripts/config --enable CONFIG_PACKAGE_rpcd-mod-luci
+          ./scripts/config --enable CONFIG_PACKAGE_rpcd-mod-rrdns
+          
           echo ">>> 执行 make defconfig..."
           make defconfig
-          
-          echo ">>> 强制删除有问题的 rpcd-mod-luci 和 rpcd-mod-rrdns 包..."
-          rm -rf feeds/luci/libs/rpcd-mod-luci
-          rm -rf package/feeds/luci/rpcd-mod-luci
-          rm -rf feeds/luci/libs/rpcd-mod-rrdns
-          rm -rf package/feeds/luci/rpcd-mod-rrdns
           
           echo ">>> 配置检查完成"
 
