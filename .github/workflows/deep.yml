@@ -1,4 +1,4 @@
-name: 编译 ImmortalWrt (AN7581) for Nokia XG-040G-MD
+name: 编译 ImmortalWrt (AN7581) for Nokia XG-140G-MD
 
 on:
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
           git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
           cd openwrt
           
-          # 替换 feeds 为 ImmortalWrt 源（使用 master 分支，兼容性更好）
+          # 替换 feeds 为 ImmortalWrt 源（使用 master 分支）
           cp feeds.conf.default feeds.conf.default.bak
           echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
           echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
@@ -54,11 +54,12 @@ jobs:
       - name: 5. 应用用户自定义配置文件 (.config)
         run: |
           set -e
+          echo ">>> 复制用户 .config 文件..."
           cp ${{ github.workspace }}/config/.config ${{ github.workspace }}/openwrt/.config
           cd ${{ github.workspace }}/openwrt
+          echo ">>> 执行 make defconfig..."
           make defconfig
-          # 自动处理内核新配置项（全部选默认值，避免交互式询问）
-          make olddefconfig
+          echo ">>> 配置检查完成"
 
       - name: 6. 执行自定义脚本 (custom.sh)
         run: |
@@ -72,11 +73,10 @@ jobs:
           set -e
           make download -j$(nproc) || make download -j1 V=s
 
-      - name: 8. 开始编译固件（优化日志输出）
+      - name: 8. 开始编译固件
         working-directory: openwrt
         run: |
           set -e
-          # 先尝试静默编译，减少日志量；失败时自动回退到单线程详细日志模式
           make -j$(nproc) || make -j1 V=s
 
       - name: 9. 打包固件并准备上传
@@ -85,7 +85,6 @@ jobs:
           mkdir -p ${{ github.workspace }}/firmware
           cd ${{ github.workspace }}/openwrt/bin/targets/airoha/an7581
           
-          # 列出所有生成的文件，便于调试
           echo ">>> 生成的固件文件列表："
           ls -la
           
@@ -101,6 +100,6 @@ jobs:
       - name: 10. 上传固件到 Actions Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-AN7581-Nokia-XG-040G-MD
+          name: ImmortalWrt-AN7581-Nokia-XG-140G-MD
           path: ${{ github.workspace }}/firmware/
           retention-days: 90
