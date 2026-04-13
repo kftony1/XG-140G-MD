@@ -1,4 +1,4 @@
-name: Build_XG-040G-MD_AN7581
+name: Build_XG-040G-MD_AN7581-BIN
 
 on:
   workflow_dispatch:
@@ -90,7 +90,7 @@ jobs:
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: 写入完整.config
+      - name: 写入完整.config（强制生成BIN固件）
         run: |
           cd openwrt
           echo "CONFIG_TARGET_airoha=y" > .config
@@ -98,6 +98,9 @@ jobs:
           echo "# CONFIG_TARGET_MULTI_PROFILE is not set" >> .config
           echo "CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md=y" >> .config
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=512" >> .config
+          echo "CONFIG_TARGET_ROOTFS_INITRAMFS=y" >> .config
+          echo "CONFIG_VMLINUX=y" >> .config
+          echo "CONFIG_DTS_I2C=y" >> .config
           echo "CONFIG_BUSYBOX_CONFIG_FEATURE_TOP_SMP_CPU=y" >> .config
           echo "CONFIG_BUSYBOX_CONFIG_PASSWD=y" >> .config
           echo "CONFIG_TARGET_INIT_PATH=\"/usr/sbin:/usr/bin:/sbin:/bin\"" >> .config
@@ -202,5 +205,5 @@ jobs:
       - name: 上传固件文件
         uses: actions/upload-artifact@v4
         with:
-          name: XG-040G-MD_Firmware
+          name: XG-040G-MD_Firmware_BIN
           path: openwrt/bin/targets/airoha/
