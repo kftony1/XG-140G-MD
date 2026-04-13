@@ -1,4 +1,4 @@
-name: Build_XG-040G-MD_AN7581
+name: Build_XG-140G-MD_AN7581
 
 on:
   workflow_dispatch:
@@ -17,6 +17,9 @@ on:
 env:
   CONFIG_FILE: config/.config
   TZ: Asia/Shanghai
+  # 🔥 防止日志截断
+  ACTIONS_RUNNER_HOOK_JOB_STARTED: /usr/bin/true
+  BUILD_LOG: true
 
 jobs:
   build:
@@ -25,6 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 🔥 最大化释放磁盘空间（防编译失败）
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -33,9 +37,22 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
+          swap-storage: true
 
       - name: Show system info
         run: df -h && free -h && nproc
+
+      # 🔥 开启 OpenWrt 编译缓存（大幅提速）
+      - name: Cache OpenWrt Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/.ccache
+            openwrt/staging_dir
+            openwrt/build_dir
+          key: ${{ runner.os }}-openwrt-${{ hashFiles(env.CONFIG_FILE) }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
 
       - name: Initialization environment
         env:
@@ -53,7 +70,7 @@ jobs:
           sudo cp -rf cmake-3.31.5-linux-x86_64/share/* /usr/share/
           cmake --version
 
-      - name: 克隆 AN7581 源码 + 配置 ImmortalWrt feeds
+      - name: 克隆 AN7581 源码
         run: |
           set -e
           git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
@@ -66,41 +83,38 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 写入 network 和 shadow 配置
+      - name: 写入 network + shadow 配置
         run: |
           cd openwrt
           mkdir -p files/etc/config
-          mkdir -p files/etc
-          # 写入 network
           cat <<-'EOF' > files/etc/config/network
-          config interface 'loopback'
-              option ifname 'lo'
-              option proto 'static'
-              option ipaddr '127.0.0.1'
-              option netmask '255.0.0.0'
+config interface 'loopback'
+    option ifname 'lo'
+    option proto 'static'
+    option ipaddr '127.0.0.1'
+    option netmask '255.0.0.0'
 
-          config interface 'lan'
-              option ifname 'eth0'
-              option proto 'static'
-              option ipaddr '192.168.1.1'
-              option netmask '255.255.255.0'
-              option ip6assign '60'
+config interface 'lan'
+    option ifname 'eth0'
+    option proto 'static'
+    option ipaddr '192.168.1.1'
+    option netmask '255.255.255.0'
+    option ip6assign '60'
 
-          config interface 'wan'
-              option ifname 'lan1'
-              option proto 'dhcp'
+config interface 'wan'
+    option ifname 'lan1'
+    option proto 'dhcp'
 
-          config interface 'wan6'
-              option ifname 'lan1'
-              option proto 'dhcpv6'
-          EOF
-          # 写入 shadow
+config interface 'wan6'
+    option ifname 'lan1'
+    option proto 'dhcpv6'
+EOF
           cat <<-'EOF' > files/etc/shadow
-          root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-          daemon:*:0:0:99999:7:::
-          ftp:*:0:0:99999:7:::
-          nobody:*:0:0:99999:7:::
-          EOF
+root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+EOF
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
@@ -115,13 +129,15 @@ jobs:
           cd openwrt
           make download -j4
 
+      # 🔥 防日志截断 + 编译优化
       - name: 开始编译
         run: |
           cd openwrt
-          make -j$(nproc) || make -j1 V=s
+          script -e -c "make -j$(nproc) || make -j1 V=s" build.log
+        shell: bash
 
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: XG-040G-MD_Firmware
+          name: XG-140G-MD_Firmware
           path: openwrt/bin/targets/
