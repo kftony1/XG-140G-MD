@@ -15,7 +15,6 @@ on:
         type: string
 
 env:
-  CONFIG_FILE: config/.config
   TZ: Asia/Shanghai
 
 jobs:
@@ -91,10 +90,98 @@ jobs:
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: Load config
+      - name: 写入完整.config
         run: |
           cd openwrt
-          cp ../$CONFIG_FILE .config
+          cat > .config << 'EOF'
+CONFIG_TARGET_airoha=y
+CONFIG_TARGET_airoha_an7581=y
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md=y
+CONFIG_TARGET_ROOTFS_PARTSIZE=512
+CONFIG_BUSYBOX_CONFIG_FEATURE_TOP_SMP_CPU=y
+CONFIG_BUSYBOX_CONFIG_PASSWD=y
+CONFIG_TARGET_INIT_PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+CONFIG_TARGET_PREINIT_SUPPRESS_FAILSAFE_NETWORK=y
+CONFIG_TARGET_OPTIMIZATION="-Os -pipe -march=armv8-a+crc+crypto -mcpu=cortex-a53"
+CONFIG_USE_MUSL=y
+CONFIG_CCACHE=y
+CONFIG_STRIP_KERNEL_EXPORTS=y
+CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_LUCI_LANG_zh_Hans=y
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_opkg=y
+CONFIG_PACKAGE_luci-app-opkg=y
+CONFIG_PACKAGE_luci-app-quickstart=y
+CONFIG_PACKAGE_kmod-wdt-en7581=y
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_CORE=y
+CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
+CONFIG_PACKAGE_kmod-airoha-eth=y
+CONFIG_PACKAGE_kmod-phy-en8811h=y
+CONFIG_PACKAGE_airoha-en8811h-firmware=y
+CONFIG_PACKAGE_kmod-airoha-npu=y
+CONFIG_PACKAGE_airoha-npu-firmware=y
+CONFIG_PACKAGE_kmod-mtd-spi-nand=y
+CONFIG_PACKAGE_kmod-spi-airoha-snfi=y
+CONFIG_PACKAGE_kmod-spi-nor=y
+CONFIG_PACKAGE_kmod-hwmon-airoha=y
+CONFIG_PACKAGE_kmod-thermal-airoha=y
+CONFIG_PACKAGE_kmod-reset-airoha=y
+CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
+CONFIG_PACKAGE_kmod-leds-airoha=y
+CONFIG_PACKAGE_kmod-cpufreq-en7581=y
+CONFIG_PACKAGE_kmod-pcie-airoha=y
+CONFIG_PACKAGE_kmod-usb2=y
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-ehci=y
+CONFIG_PACKAGE_kmod-phy-airoha-usb=y
+CONFIG_PACKAGE_block-mount=y
+CONFIG_KERNEL_MTD=y
+CONFIG_KERNEL_MTD_PARTS=y
+CONFIG_KERNEL_MTD_BLOCK=y
+CONFIG_KERNEL_MTD_CHAR=y
+CONFIG_KERNEL_MTD_SPI_NOR=y
+CONFIG_KERNEL_SPI_MASTER=y
+CONFIG_PACKAGE_mtd-utils=y
+CONFIG_PACKAGE_ubi-utils=y
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_odhcpd=y
+CONFIG_PACKAGE_odhcp6c=y
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_kmod-ppp=y
+CONFIG_PACKAGE_kmod-pppoe=y
+CONFIG_PACKAGE_kmod-pppox=y
+CONFIG_PACKAGE_chrony=y
+CONFIG_PACKAGE_kmod-ipt-fullconenat=y
+CONFIG_PACKAGE_kmod-ipt-offload=y
+CONFIG_PACKAGE_kmod-nf-flow=y
+CONFIG_PACKAGE_kmod-nft-offload=y
+CONFIG_PACKAGE_ethtool=y
+CONFIG_KERNEL_NFT_FLOW_OFFLOAD=y
+CONFIG_KERNEL_TCP_CONG_BBR=y
+CONFIG_KERNEL_DEFAULT_TCP_CONG="bbr"
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_iptables-mod-tproxy=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+CONFIG_PACKAGE_kmod-8021q=y
+CONFIG_PACKAGE_kmod-bridge=y
+CONFIG_PACKAGE_kmod-br-netfilter=y
+CONFIG_KERNEL_NET_VENDOR_MEDIATEK=n
+CONFIG_KERNEL_NET_VENDOR_REALTEK=n
+CONFIG_KERNEL_NET_VENDOR_SYNOPSYS=n
+CONFIG_KERNEL_NET_SWITCHDEV=y
+CONFIG_KERNEL_IPV6=y
+CONFIG_KERNEL_BRIDGE_VLAN_FILTERING=y
+CONFIG_PACKAGE_dropbear=y
+CONFIG_DROPBEAR_CURVE25519=y
+EOF
           make defconfig
 
       - name: Download dependencies
@@ -117,4 +204,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: XG-140G-MD_Firmware
-          path: openwrt/bin/targets/
+          path: openwrt/bin/targets/airoha/
