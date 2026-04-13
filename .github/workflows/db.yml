@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ssh:
-        description: 'SSH 调试（专业人员用）'
+        description: 'SSH 调试'
         required: false
         default: false
         type: boolean
@@ -18,10 +18,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取本仓库代码
+      - name: Checkout
         uses: actions/checkout@main
 
-      - name: 释放磁盘空间
+      - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -30,20 +30,18 @@ jobs:
           haskell: true
           large-packages: true
 
-      - name: 显示系统资源
+      - name: Show system info
         run: df -h && free -h && nproc
 
-      - name: 安装编译依赖
+      - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update -y && sudo apt-get upgrade -y
-          sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib gettext \
-          git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev libelf-dev \
-          wget curl jq qemu-utils device-tree-compiler
+          sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
           sudo apt-get autoremove -y && sudo apt-get clean
 
-      - name: 安装 CMake 3.31.5（x86_64）
+      - name: Install CMake 3.31.5
         run: |
           wget https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
           tar -zxf cmake-3.31.5-linux-x86_64.tar.gz
@@ -51,56 +49,52 @@ jobs:
           sudo cp -rf cmake-3.31.5-linux-x86_64/share/* /usr/share/
           cmake --version
 
-      - name: 克隆 Ansuel an7581 源码
-        run: |
-          git clone --depth 1 https://github.com/Ansuel/openwrt.git -b an7581 openwrt
+      - name: Clone source code
+        run: git clone --depth 1 https://github.com/Ansuel/openwrt.git -b an7581 openwrt
 
-      - name: 替换为 ImmortalWrt 官方 feeds
+      - name: Replace feeds
         run: |
           cd openwrt
           rm -f feeds.conf
-          cat > feeds.conf <<EOF
-          src-git packages https://github.com/immortalwrt/packages.git
-          src-git luci https://github.com/immortalwrt/luci.git
-          src-git routing https://github.com/immortalwrt/routing.git
-          src-git telephony https://github.com/immortalwrt/telephony.git
-          EOF
-          cat feeds.conf
+          echo "src-git packages https://github.com/immortalwrt/packages.git" >> feeds.conf
+          echo "src-git luci https://github.com/immortalwrt/luci.git" >> feeds.conf
+          echo "src-git routing https://github.com/immortalwrt/routing.git" >> feeds.conf
+          echo "src-git telephony https://github.com/immortalwrt/telephony.git" >> feeds.conf
 
-      - name: 更新并安装 feeds
+      - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 运行 custom.sh（你的自定义脚本）
+      - name: Run custom.sh
         run: |
           chmod +x $CUSTOM_SH
           mv $CUSTOM_SH openwrt/
           cd openwrt
           ./$CUSTOM_SH
 
-      - name: 加载你的 .config 配置
+      - name: Load config
         run: |
           cd openwrt
           cp -f ../$CONFIG_FILE .config
           make defconfig
 
-      - name: 下载编译依赖
+      - name: Download dependencies
         run: |
           cd openwrt
           make download -j4
 
-      - name: SSH 调试（可选）
+      - name: SSH debug
         if: github.event.inputs.ssh == 'true'
         uses: mxschmitt/action-tmate@main
 
-      - name: 编译固件
+      - name: Build firmware
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: 上传固件产物
+      - name: Upload firmware
         uses: actions/upload-artifact@main
         with:
           name: XG-040G-MD_Firmware
