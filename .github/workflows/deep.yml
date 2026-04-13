@@ -1,0 +1,89 @@
+name: 编译 ImmortalWrt (AN7581) for Nokia XG-040G-MD
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'config/.config'
+      - 'custom.sh'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: 1. 检出用户仓库
+        uses: actions/checkout@v4
+
+      - name: 2. 初始化编译环境
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libncurses5-dev gawk git subversion \
+            gettext unzip file python3 python3-distutils rsync qemu-utils zstd \
+            libssl-dev libelf-dev wget swig
+
+      - name: 3. 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker image prune -af || true
+
+      - name: 4. 克隆 Ansuel 大神 OpenWrt 分支（AN7581 驱动与补丁）
+        run: |
+          git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
+          cd openwrt
+          
+          # 替换 feeds 为 ImmortalWrt 源（移除无效的 ansuel feed）
+          cp feeds.conf.default feeds.conf.default.bak
+          echo "src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git routing https://github.com/openwrt/routing.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10" >> feeds.conf.default
+          
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 5. 应用用户自定义配置文件 (.config)
+        run: |
+          cp ${{ github.workspace }}/config/.config ${{ github.workspace }}/openwrt/.config
+          cd ${{ github.workspace }}/openwrt
+          make defconfig
+
+      - name: 6. 执行自定义脚本 (custom.sh)
+        run: |
+          chmod +x ${{ github.workspace }}/custom.sh
+          ${{ github.workspace }}/custom.sh ${{ github.workspace }}/openwrt
+
+      - name: 7. 下载编译所需的源码包
+        working-directory: openwrt
+        run: |
+          make download -j$(nproc) || make download -j1 V=s
+
+      - name: 8. 开始编译固件
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) V=s || make -j1 V=s
+
+      - name: 9. 打包固件并准备上传
+        run: |
+          mkdir -p ${{ github.workspace }}/firmware
+          cd ${{ github.workspace }}/openwrt/bin/targets/airoha/an7581
+          
+          for f in *sysupgrade.bin; do
+            [ -f "$f" ] && cp "$f" ${{ github.workspace }}/firmware/
+          done
+          
+          cd ${{ github.workspace }}/firmware
+          sha256sum *.bin > checksums.txt
+
+      - name: 10. 上传固件到 Actions Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-AN7581-Nokia-XG-040G-MD
+          path: ${{ github.workspace }}/firmware/
+          retention-days: 90
