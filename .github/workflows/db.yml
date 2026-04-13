@@ -1,4 +1,4 @@
-name: XG-140G-MD-最终完美版
+name: XG-140G-MD-最终纯净版
 on:
   workflow_dispatch:
 
@@ -14,33 +14,24 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 初始化环境（100%无错）
+      - name: 初始化环境（100%无错 无swap）
         run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt remove -y --purge needrestart
           sudo apt autoremove -y
           sudo apt update -yq
           sudo apt install -yq build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
-          
-          # 修复 swap 错误（你刚才报错的地方）
-          sudo swapoff -a
-          sudo rm -f /swapfile
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
 
       - name: 拉取源码
         run: |
           git clone https://github.com/immortalwrt/immortalwrt.git --depth 1 openwrt
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
 
       - name: 加载配置
         run: |
           cp config/.config openwrt/.config
           cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
           make defconfig
 
       - name: 自定义脚本
@@ -54,12 +45,12 @@ jobs:
           cd openwrt
           make download -j$(nproc)
 
-      - name: 编译工具链（不卡）
+      - name: 编译工具链
         run: |
           cd openwrt
           make toolchain/install -j$(nproc)
 
-      - name: 编译固件（多核 不卡）
+      - name: 编译固件
         run: |
           cd openwrt
           make -j$(nproc)
