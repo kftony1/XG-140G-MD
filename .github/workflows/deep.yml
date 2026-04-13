@@ -23,56 +23,71 @@ jobs:
 
       - name: 2. 初始化编译环境
         run: |
+          set -e
           sudo apt update
-          sudo apt install -y build-essential libncurses5-dev gawk git subversion \
+          sudo apt install -y build-essential libncurses-dev gawk git subversion \
             gettext unzip file python3 python3-distutils rsync qemu-utils zstd \
             libssl-dev libelf-dev wget swig
 
       - name: 3. 释放磁盘空间
         run: |
+          set -e
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo docker image prune -af || true
 
       - name: 4. 克隆 Ansuel 大神 OpenWrt 分支（AN7581 驱动与补丁）
         run: |
+          set -e
           git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
           cd openwrt
           
-          # 替换 feeds 为 ImmortalWrt 源（移除无效的 ansuel feed）
+          # 替换 feeds 为 ImmortalWrt 源（使用 master 分支，兼容性更好）
           cp feeds.conf.default feeds.conf.default.bak
-          echo "src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10" > feeds.conf.default
-          echo "src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10" >> feeds.conf.default
-          echo "src-git routing https://github.com/openwrt/routing.git;openwrt-24.10" >> feeds.conf.default
-          echo "src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf.default
+          echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf.default
+          echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf.default
           
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: 5. 应用用户自定义配置文件 (.config)
         run: |
+          set -e
           cp ${{ github.workspace }}/config/.config ${{ github.workspace }}/openwrt/.config
           cd ${{ github.workspace }}/openwrt
           make defconfig
+          # 自动处理内核新配置项（全部选默认值，避免交互式询问）
+          make olddefconfig
 
       - name: 6. 执行自定义脚本 (custom.sh)
         run: |
+          set -e
           chmod +x ${{ github.workspace }}/custom.sh
           ${{ github.workspace }}/custom.sh ${{ github.workspace }}/openwrt
 
       - name: 7. 下载编译所需的源码包
         working-directory: openwrt
         run: |
+          set -e
           make download -j$(nproc) || make download -j1 V=s
 
-      - name: 8. 开始编译固件
+      - name: 8. 开始编译固件（优化日志输出）
         working-directory: openwrt
         run: |
-          make -j$(nproc) V=s || make -j1 V=s
+          set -e
+          # 先尝试静默编译，减少日志量；失败时自动回退到单线程详细日志模式
+          make -j$(nproc) || make -j1 V=s
 
       - name: 9. 打包固件并准备上传
         run: |
+          set -e
           mkdir -p ${{ github.workspace }}/firmware
           cd ${{ github.workspace }}/openwrt/bin/targets/airoha/an7581
+          
+          # 列出所有生成的文件，便于调试
+          echo ">>> 生成的固件文件列表："
+          ls -la
           
           for f in *sysupgrade.bin; do
             [ -f "$f" ] && cp "$f" ${{ github.workspace }}/firmware/
@@ -80,6 +95,8 @@ jobs:
           
           cd ${{ github.workspace }}/firmware
           sha256sum *.bin > checksums.txt
+          echo ">>> 打包完成，固件校验和："
+          cat checksums.txt
 
       - name: 10. 上传固件到 Actions Artifacts
         uses: actions/upload-artifact@v4
