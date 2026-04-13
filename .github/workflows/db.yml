@@ -1,65 +1,107 @@
-name: XG-140G-MD-最终纯净版
+name: Build_XG-040G-MD_AN7581
+
 on:
   workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH 调试（专业人员用）'
+        required: false
+        default: false
+        type: boolean
 
-permissions:
-  contents: write
+env:
+  CONFIG_FILE: config/.config
+  CUSTOM_SH: custom.sh
+  TZ: Asia/Shanghai
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 480
-
+    runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+      - name: 拉取本仓库代码
+        uses: actions/checkout@main
 
-      # ==================== 完全无报错环境 ====================
-      - name: 初始化环境
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt remove -y needrestart
-          sudo apt update -yq
-          sudo apt install -y build-essential ccache libncurses5-dev libssl-dev libelf-dev git curl unzip bison flex device-tree-compiler
+      - name: 释放磁盘空间
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
 
-      # ==================== 拉取源码 ====================
-      - name: 拉取源码
-        run: |
-          git clone https://github.com/immortalwrt/immortalwrt.git --depth=1 openwrt
+      - name: 显示系统资源
+        run: df -h && free -h && nproc
 
-      # ==================== 加载配置 ====================
-      - name: 应用配置
+      - name: 安装编译依赖
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          cp config/.config openwrt/.config
+          sudo apt-get update -y && sudo apt-get upgrade -y
+          sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib gettext \
+          git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev libelf-dev \
+          wget curl jq qemu-utils device-tree-compiler
+          sudo apt-get autoremove -y && sudo apt-get clean
+
+      - name: 安装 CMake 3.31.5（x86_64）
+        run: |
+          wget https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
+          tar -zxf cmake-3.31.5-linux-x86_64.tar.gz
+          sudo cp -rf cmake-3.31.5-linux-x86_64/bin/* /usr/bin/
+          sudo cp -rf cmake-3.31.5-linux-x86_64/share/* /usr/share/
+          cmake --version
+
+      - name: 克隆 Ansuel an7581 源码
+        run: |
+          git clone --depth 1 https://github.com/Ansuel/openwrt.git -b an7581 openwrt
+
+      - name: 替换为 ImmortalWrt 官方 feeds
+        run: |
+          cd openwrt
+          rm -f feeds.conf
+          cat > feeds.conf <<EOF
+src-git packages https://github.com/immortalwrt/packages.git
+src-git luci https://github.com/immortalwrt/luci.git
+src-git routing https://github.com/immortalwrt/routing.git
+src-git telephony https://github.com/immortalwrt/telephony.git
+EOF
+          cat feeds.conf
+
+      - name: 更新并安装 feeds
+        run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: 运行 custom.sh（你的自定义脚本）
+        run: |
+          chmod +x $CUSTOM_SH
+          mv $CUSTOM_SH openwrt/
+          cd openwrt
+          ./$CUSTOM_SH
+
+      - name: 加载你的 .config 配置
+        run: |
+          cd openwrt
+          cp -f ../$CONFIG_FILE .config
           make defconfig
 
-      # ==================== 自定义脚本 ====================
-      - name: 自定义脚本
+      - name: 下载编译依赖
         run: |
-          chmod +x custom.sh
           cd openwrt
-          ../custom.sh
+          make download -j4
 
-      # ==================== 下载 & 编译 ====================
-      - name: 下载依赖
-        run: |
-          cd openwrt
-          make download -j$(nproc)
+      - name: SSH 调试（可选）
+        if: github.event.inputs.ssh == 'true'
+        uses: mxschmitt/action-tmate@main
 
       - name: 编译固件
         run: |
           cd openwrt
-          make -j$(nproc)
+          make -j$(nproc) || make -j1 V=s
 
-      # ==================== 上传固件 ====================
-      - name: 查看固件
-        run: ls -la openwrt/bin/targets/airoha/an7581/
-
-      - name: 上传固件
-        uses: actions/upload-artifact@v4
+      - name: 上传固件产物
+        uses: actions/upload-artifact@main
         with:
-          name: 固件-XG-140G-MD
-          path: openwrt/bin/targets/airoha/an7581/
+          name: XG-040G-MD_Firmware
+          path: openwrt/bin/targets/
