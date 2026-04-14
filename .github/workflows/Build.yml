@@ -32,13 +32,11 @@ jobs:
           cp custom/.config . || { echo "❌ .config not found in repository root"; exit 1; }
           cp -r custom/files . 2>/dev/null || true
 
-      - name: Verify .config content after copy
+      - name: Verify .config content
         working-directory: openwrt
         run: |
-          echo "===== First 10 lines of .config ====="
           head -10 .config
-          echo "===== Checking for airoha target ====="
-          grep -q "CONFIG_TARGET_airoha=y" .config || { echo "❌ airoha target missing in .config"; exit 1; }
+          grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -56,74 +54,56 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dl-${{ env.OPENWRT_VERSION }}-
 
-      - name: Install dependencies (full build environment)
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            asciidoc \
-            bash \
-            bc \
-            binutils \
-            bison \
             build-essential \
-            bzip2 \
-            ccache \
-            clang \
-            coreutils \
-            cpio \
-            diffstat \
-            fastjar \
             flex \
+            bison \
             g++ \
             gawk \
-            gcc \
+            gcc-multilib \
+            g++-multilib \
             gettext \
             git \
-            java-propose-classpath \
-            kmod \
-            libc6 \
-            libc6-dev \
+            libncurses-dev \
+            libssl-dev \
+            python3-distutils \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            ccache \
+            time \
+            bc \
+            cpio \
+            perl-modules \
+            python3 \
+            patch \
             libelf-dev \
             liblzma-dev \
-            libncurses-dev \
-            libncurses5-dev \
-            libssl-dev \
-            locales \
-            make \
-            mkisofs \
-            nano \
-            ncurses-dev \
-            openssl \
-            patch \
-            perl-ipc-cmd \
-            perl-modules \
-            pkgconf \
-            python3 \
-            python3-distutils \
-            python3-pip \
-            python3-venv \
-            rsync \
-            ruby \
-            ruby-dev \
-            sdcc \
-            subversion \
-            swig \
-            time \
-            uglifyjs \
-            unzip \
-            upx \
-            wget \
-            xsltproc \
-            zlib1g-dev
+            locales
+          # 关键：安装 perl-ipc-cmd（如果 apt 没有，则用 cpan）
+          sudo apt install -y perl-ipc-cmd || { sudo apt install -y cpanminus && sudo cpanm IPC::Cmd; }
 
-      - name: Run prerequisite check (debug)
+      - name: Run prerequisite check and save log
         working-directory: openwrt
         run: |
-          make prereq
-          if [ $? -ne 0 ]; then
-            echo "Prerequisite check failed. Please check the errors above."
+          make prereq 2>&1 | tee prereq.log
+          if grep -q "missing" prereq.log; then
+            echo "===== Missing dependencies detected ====="
+            cat prereq.log
             exit 1
           fi
+
+      - name: Upload prereq log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prereq-log
+          path: openwrt/prereq.log
 
       - name: Update feeds
         working-directory: openwrt
@@ -135,13 +115,11 @@ jobs:
         working-directory: openwrt
         run: |
           make defconfig
-          grep -q "CONFIG_TARGET_airoha=y" .config || { echo "❌ airoha target lost after defconfig"; exit 1; }
+          grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
 
-      - name: Show target configuration summary
+      - name: Show target summary
         working-directory: openwrt
-        run: |
-          echo "===== Target Configuration ====="
-          grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
+        run: grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
       - name: Download all sources
         working-directory: openwrt
