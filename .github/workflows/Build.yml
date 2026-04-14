@@ -93,16 +93,10 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Manually bypass prerequisite check
+      - name: Validate and expand .config (force)
         working-directory: openwrt
         run: |
-          mkdir -p staging_dir/host
-          touch staging_dir/host/.prereq-build
-
-      - name: Validate and expand .config
-        working-directory: openwrt
-        run: |
-          make defconfig
+          FORCE=1 make defconfig
           echo "✅ defconfig completed"
 
       - name: Show target summary
@@ -111,18 +105,16 @@ jobs:
           echo "===== Target Configuration ====="
           grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
-      - name: Download all sources
+      - name: Download all sources (force)
         working-directory: openwrt
-        run: make download -j$(nproc)
+        run: FORCE=1 make download -j$(nproc)
 
-      - name: Compile firmware
+      - name: Compile firmware (force)
         working-directory: openwrt
-        env:
-          CCACHE_DIR: ~/.ccache
-          PATH: "/usr/lib/ccache:$PATH"
         run: |
+          export PATH="/usr/lib/ccache:$PATH"
           echo "Starting compilation at $(date)"
-          make -j$(nproc) V=s
+          FORCE=1 make -j$(nproc) V=s
           echo "Compilation finished at $(date)"
 
       - name: Prepare artifacts
