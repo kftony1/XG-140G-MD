@@ -1,17 +1,57 @@
-# ... (工作流文件开头部分保持不变) ...
+name: Build Firmware with ImageBuilder (24.10)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout custom files
+        uses: actions/checkout@v4
+
       - name: Download OpenWrt ImageBuilder
         run: |
-          # 修正点 1：将链接中的版本号从 "24.10.0" 改为 "24.10"
+          # 修正 1: 将版本号从 24.10.0 修正为 24.10
           wget https://downloads.openwrt.org/releases/24.10/targets/airoha/an7581/openwrt-imagebuilder-24.10-airoha-an7581.Linux-x86_64.tar.xz
           tar -xf openwrt-imagebuilder-*.tar.xz
           rm openwrt-imagebuilder-*.tar.xz
           mv openwrt-imagebuilder-* imagebuilder
 
-# ... (中间步骤保持不变) ...
+      - name: Inject custom files and config
+        run: |
+          # 复制你的 files/ 目录（如果有）
+          if [ -d files ]; then
+            cp -r files imagebuilder/
+          fi
+          # 复制你的 .config（ImageBuilder 实际上不需要 .config，但可以保留）
+          cp .config imagebuilder/.config 2>/dev/null || true
+
+      - name: Override feeds to use ImmortalWrt (optional)
+        run: |
+          # 如果你需要 ImmortalWrt 软件源，在固件内预置 distfeeds.conf
+          mkdir -p imagebuilder/files/etc/opkg
+          cat > imagebuilder/files/etc/opkg/distfeeds.conf << 'EOF'
+          src/gz immortalwrt_core https://mirrors.ustc.edu.cn/immortalwrt/releases/24.10/targets/airoha/an7581/packages
+          src/gz immortalwrt_base https://mirrors.ustc.edu.cn/immortalwrt/releases/24.10/packages/aarch64_cortex-a53/base
+          src/gz immortalwrt_luci https://mirrors.ustc.edu.cn/immortalwrt/releases/24.10/packages/aarch64_cortex-a53/luci
+          src/gz immortalwrt_packages https://mirrors.ustc.edu.cn/immortalwrt/releases/24.10/packages/aarch64_cortex-a53/packages
+          src/gz immortalwrt_routing https://mirrors.ustc.edu.cn/immortalwrt/releases/24.10/packages/aarch64_cortex-a53/routing
+          EOF
+
       - name: Build firmware image
         working-directory: imagebuilder
         run: |
-          # 修正点 2：将 PROFILE 从 "nokia_xg-040g-md" 改为 "nokia-xg-040g-md"
+          # 修正 2: 将 PROFILE 从 nokia_xg-040g-md 修正为 nokia-xg-040g-md
           make image PROFILE="nokia-xg-040g-md" \
             PACKAGES="luci luci-ssl luci-i18n-base-zh-cn kmod-usb3 kmod-usb-dwc3 kmod-phy-airoha-en8811h airoha-en8811h-firmware kmod-wdt-en7581" \
             FILES=files/
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-24.10-nokia-xg140gmd
+          path: imagebuilder/bin/targets/airoha/an7581/*.bin
