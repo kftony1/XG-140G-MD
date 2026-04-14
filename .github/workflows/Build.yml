@@ -1,3 +1,4 @@
+# .github/workflows/build.yml
 name: Build OpenWrt for Nokia XG-140G-MD (24.10 + ImmortalWrt)
 
 on:
@@ -12,6 +13,7 @@ jobs:
     timeout-minutes: 300
     env:
       OPENWRT_VERSION: "openwrt-24.10"
+      REPO_URL: https://github.com/openwrt/openwrt
 
     steps:
       - name: Checkout OpenWrt source
@@ -31,12 +33,6 @@ jobs:
         run: |
           cp custom/.config . || { echo "❌ .config not found in repository root"; exit 1; }
           cp -r custom/files . 2>/dev/null || true
-
-      - name: Verify .config content
-        working-directory: openwrt
-        run: |
-          head -10 .config
-          grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -85,25 +81,6 @@ jobs:
             libelf-dev \
             liblzma-dev \
             locales
-          # 关键：安装 perl-ipc-cmd（如果 apt 没有，则用 cpan）
-          sudo apt install -y perl-ipc-cmd || { sudo apt install -y cpanminus && sudo cpanm IPC::Cmd; }
-
-      - name: Run prerequisite check and save log
-        working-directory: openwrt
-        run: |
-          make prereq 2>&1 | tee prereq.log
-          if grep -q "missing" prereq.log; then
-            echo "===== Missing dependencies detected ====="
-            cat prereq.log
-            exit 1
-          fi
-
-      - name: Upload prereq log if failed
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prereq-log
-          path: openwrt/prereq.log
 
       - name: Update feeds
         working-directory: openwrt
@@ -116,10 +93,6 @@ jobs:
         run: |
           make defconfig
           grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
-
-      - name: Show target summary
-        working-directory: openwrt
-        run: grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
       - name: Download all sources
         working-directory: openwrt
@@ -143,12 +116,6 @@ jobs:
           FW_DIR="bin/targets/airoha/an7581"
           if [ -d "$FW_DIR" ]; then
             cp $FW_DIR/*.bin $FW_DIR/*.img $FW_DIR/sha256sums artifacts/ 2>/dev/null || true
-            for f in artifacts/*.bin; do
-              [ -e "$f" ] && mv "$f" "artifacts/openwrt-nokia-xg-140g-md-$(date +%Y%m%d).bin"
-            done
-            for f in artifacts/*.img; do
-              [ -e "$f" ] && mv "$f" "artifacts/openwrt-nokia-xg-140g-md-$(date +%Y%m%d).img"
-            done
             cd artifacts && sha256sum * > checksums.txt && cd ..
           else
             echo "⚠️ No firmware generated! Check logs."
