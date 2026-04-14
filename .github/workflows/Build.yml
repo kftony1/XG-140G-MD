@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for Nokia XG-140G-MD (24.10)
+name: Build OpenWrt (Ansuel) for Nokia XG-140G-MD
 
 on:
   workflow_dispatch:
@@ -9,53 +9,60 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 300
-    env:
-      OPENWRT_VERSION: "openwrt-24.10"
+    timeout-minutes: 360
 
     steps:
-      - name: Checkout ImmortalWrt source
+      - name: Checkout Ansuel OpenWrt source (shallow)
         uses: actions/checkout@v4
         with:
-          repository: immortalwrt/immortalwrt
-          ref: ${{ env.OPENWRT_VERSION }}
+          repository: Ansuel/openwrt
+          ref: openwrt-24.10-airoha-an7581-stable
           path: openwrt
+          fetch-depth: 1
 
-      - name: Checkout custom config and files
+      - name: Checkout config repository
         uses: actions/checkout@v4
         with:
           path: openwrt/custom
+          fetch-depth: 1
 
-      - name: Merge .config and files/
+      - name: Merge .config and custom files
         working-directory: openwrt
         run: |
           cp custom/.config . || exit 1
           cp -r custom/files . 2>/dev/null || true
 
-      - name: Verify .config content
+      - name: Disable problematic firmware packages
         working-directory: openwrt
         run: |
-          head -5 .config
+          sed -i '/CONFIG_PACKAGE_linux-firmware=y/d' .config
+          sed -i '/CONFIG_PACKAGE_iwlwifi-firmware/d' .config
+          sed -i '/CONFIG_PACKAGE_amdgpu-firmware/d' .config
+          echo "# CONFIG_PACKAGE_linux-firmware is not set" >> .config
           grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
 
-      - name: Setup ccache cache
+      - name: Setup ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ env.OPENWRT_VERSION }}-${{ github.run_id }}
-          restore-keys: ${{ runner.os }}-ccache-${{ env.OPENWRT_VERSION }}-
+          key: ${{ runner.os }}-ccache-ansuel-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-ccache-ansuel-
 
-      - name: Setup source download cache
+      - name: Setup download cache
         uses: actions/cache@v4
         with:
           path: openwrt/dl
-          key: ${{ runner.os }}-dl-${{ env.OPENWRT_VERSION }}-${{ hashFiles('openwrt/.config') }}
-          restore-keys: ${{ runner.os }}-dl-${{ env.OPENWRT_VERSION }}-
+          key: ${{ runner.os }}-dl-ansuel-${{ hashFiles('openwrt/.config') }}
+          restore-keys: ${{ runner.os }}-dl-ansuel-
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget ccache time bc cpio perl-modules python3 patch libelf-dev liblzma-dev locales
+          sudo apt install -y --no-install-recommends --fix-missing \
+            build-essential flex bison g++ gawk gcc-multilib g++-multilib gettext git \
+            libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev \
+            file wget ccache time bc cpio perl-modules python3 patch libelf-dev \
+            liblzma-dev locales
 
       - name: Update feeds
         working-directory: openwrt
@@ -63,20 +70,54 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Validate and expand .config (force)
+      - name: Configure build
         working-directory: openwrt
         run: |
-          FORCE=1 make defconfig
+          make defconfig || FORCE=1 make defconfig
+          echo "===== Target config ====="
+          grep -E "CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
-      - name: Download all sources
-        working-directory: openwrt
-        run: make download -j$(nproc)
-
-      - name: Compile firmware
+      - name: Download sources (with retry)
         working-directory: openwrt
         run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          FORCE=1 make -j$(nproc) V=s
+          for i in 1 2 3; do
+            echo "Download attempt $i"
+            make download -j1 && break
+            [ $i -eq 3 ] && exit 1
+            sleep 5
+          done
+
+      - name: Compile toolchain (quiet but save full log)
+        working-directory: openwrt
+        run: |
+          make toolchain/compile -j1 V=sc 2>&1 | tee toolchain.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "Toolchain failed, cleaning and retrying..."
+            rm -rf staging_dir/toolchain-* build_dir/toolchain-*
+            make toolchain/compile -j1 V=sc 2>&1 | tee toolchain_retry.log
+          fi
+
+      - name: Compile firmware (quiet, save full log)
+        working-directory: openwrt
+        env:
+          CCACHE_DIR: ~/.ccache
+          PATH: "/usr/lib/ccache:$PATH"
+        run: |
+          echo "Starting full compilation at $(date)"
+          make -j$(nproc) V=sc 2>&1 | tee compile.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "First compilation failed, cleaning and retrying..."
+            make clean
+            make -j$(nproc) V=sc 2>&1 | tee compile_retry.log
+          fi
+          echo "Compilation finished at $(date)"
+
+      - name: Save last 500 lines of compile log (if truncated)
+        if: always()
+        working-directory: openwrt
+        run: |
+          tail -500 compile.log > compile_tail.log 2>/dev/null || true
+          tail -500 compile_retry.log > compile_retry_tail.log 2>/dev/null || true
 
       - name: Prepare artifacts
         if: always()
@@ -89,19 +130,24 @@ jobs:
             cd artifacts && sha256sum * > checksums.txt 2>/dev/null || true
           fi
 
-      - name: Upload firmware artifacts
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-24.10-nokia-xg140gmd
+          name: openwrt-ansuel-24.10-nokia-xg140gmd
           path: openwrt/artifacts/
           retention-days: 7
 
-      - name: Upload build logs
+      - name: Upload full build logs (no truncation)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
+          name: build-logs-ansuel
           path: |
-            openwrt/logs/
+            openwrt/compile.log
+            openwrt/compile_retry.log
+            openwrt/toolchain.log
+            openwrt/toolchain_retry.log
+            openwrt/compile_tail.log
+            openwrt/compile_retry_tail.log
             openwrt/.config
           retention-days: 7
