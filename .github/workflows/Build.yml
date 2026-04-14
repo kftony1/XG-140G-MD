@@ -56,38 +56,74 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dl-${{ env.OPENWRT_VERSION }}-
 
-      - name: Install dependencies
+      - name: Install dependencies (full build environment)
         run: |
           sudo apt update
           sudo apt install -y \
-            build-essential \
-            flex \
+            asciidoc \
+            bash \
+            bc \
+            binutils \
             bison \
+            build-essential \
+            bzip2 \
+            ccache \
+            clang \
+            coreutils \
+            cpio \
+            diffstat \
+            fastjar \
+            flex \
             g++ \
             gawk \
-            gcc-multilib \
-            g++-multilib \
+            gcc \
             gettext \
             git \
-            libncurses-dev \
-            libssl-dev \
-            python3-distutils \
-            rsync \
-            unzip \
-            zlib1g-dev \
-            file \
-            wget \
-            ccache \
-            time \
-            bc \
-            cpio \
-            perl-modules \
-            python3 \
-            python3-pip \
-            patch \
+            java-propose-classpath \
+            kmod \
+            libc6 \
+            libc6-dev \
             libelf-dev \
             liblzma-dev \
-            locales
+            libncurses-dev \
+            libncurses5-dev \
+            libssl-dev \
+            locales \
+            make \
+            mkisofs \
+            nano \
+            ncurses-dev \
+            openssl \
+            patch \
+            perl-ipc-cmd \
+            perl-modules \
+            pkgconf \
+            python3 \
+            python3-distutils \
+            python3-pip \
+            python3-venv \
+            rsync \
+            ruby \
+            ruby-dev \
+            sdcc \
+            subversion \
+            swig \
+            time \
+            uglifyjs \
+            unzip \
+            upx \
+            wget \
+            xsltproc \
+            zlib1g-dev
+
+      - name: Run prerequisite check (debug)
+        working-directory: openwrt
+        run: |
+          make prereq
+          if [ $? -ne 0 ]; then
+            echo "Prerequisite check failed. Please check the errors above."
+            exit 1
+          fi
 
       - name: Update feeds
         working-directory: openwrt
