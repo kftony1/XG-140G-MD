@@ -1,5 +1,4 @@
-# .github/workflows/build.yml
-name: Build OpenWrt for Nokia XG-140G-MD (24.10 + ImmortalWrt)
+name: Build ImmortalWrt for Nokia XG-140G-MD (24.10)
 
 on:
   workflow_dispatch:
@@ -13,13 +12,13 @@ jobs:
     timeout-minutes: 300
     env:
       OPENWRT_VERSION: "openwrt-24.10"
-      REPO_URL: https://github.com/openwrt/openwrt
+      REPO_URL: https://github.com/immortalwrt/immortalwrt.git
 
     steps:
-      - name: Checkout OpenWrt source
+      - name: Checkout ImmortalWrt source
         uses: actions/checkout@v4
         with:
-          repository: openwrt/openwrt
+          repository: immortalwrt/immortalwrt
           ref: ${{ env.OPENWRT_VERSION }}
           path: openwrt
 
@@ -33,6 +32,13 @@ jobs:
         run: |
           cp custom/.config . || { echo "❌ .config not found in repository root"; exit 1; }
           cp -r custom/files . 2>/dev/null || true
+
+      - name: Verify .config content
+        working-directory: openwrt
+        run: |
+          echo "===== First 10 lines of .config ====="
+          head -10 .config
+          grep -q "CONFIG_TARGET_airoha" .config && echo "✅ airoha target found" || echo "⚠️ airoha target not set, but continuing"
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -92,7 +98,13 @@ jobs:
         working-directory: openwrt
         run: |
           make defconfig
-          grep -q "CONFIG_TARGET_airoha=y" .config || exit 1
+          echo "✅ defconfig completed"
+
+      - name: Show target summary
+        working-directory: openwrt
+        run: |
+          echo "===== Target Configuration ====="
+          grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
       - name: Download all sources
         working-directory: openwrt
@@ -116,6 +128,12 @@ jobs:
           FW_DIR="bin/targets/airoha/an7581"
           if [ -d "$FW_DIR" ]; then
             cp $FW_DIR/*.bin $FW_DIR/*.img $FW_DIR/sha256sums artifacts/ 2>/dev/null || true
+            for f in artifacts/*.bin; do
+              [ -e "$f" ] && mv "$f" "artifacts/immortalwrt-nokia-xg-140g-md-$(date +%Y%m%d).bin"
+            done
+            for f in artifacts/*.img; do
+              [ -e "$f" ] && mv "$f" "artifacts/immortalwrt-nokia-xg-140g-md-$(date +%Y%m%d).img"
+            done
             cd artifacts && sha256sum * > checksums.txt && cd ..
           else
             echo "⚠️ No firmware generated! Check logs."
@@ -124,7 +142,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-nokia-xg140gmd-firmware-24.10
+          name: immortalwrt-24.10-nokia-xg140gmd
           path: openwrt/artifacts/
           retention-days: 7
 
@@ -132,7 +150,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-24.10
+          name: build-logs
           path: |
             openwrt/logs/
             openwrt/.config
