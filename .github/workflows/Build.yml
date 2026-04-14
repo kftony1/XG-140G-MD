@@ -1,4 +1,4 @@
-name: Build OpenWrt for Nokia XG-140G-MD (23.05 + ImmortalWrt)
+name: Build OpenWrt for Nokia XG-140G-MD (24.10 + ImmortalWrt)
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 300
     env:
-      OPENWRT_VERSION: "openwrt-23.05"
+      OPENWRT_VERSION: "openwrt-24.10"   # 升级到 24.10，完整支持 airoha
 
     steps:
       - name: Checkout OpenWrt source
@@ -40,13 +40,7 @@ jobs:
           echo "===== Checking for airoha target ====="
           grep -q "CONFIG_TARGET_airoha=y" .config || { echo "❌ airoha target missing in .config"; exit 1; }
 
-      - name: Enable firmware image generation (remove source-only)
-        working-directory: openwrt
-        run: |
-          sed -i 's/\(nokia-xg-040g-md.*\)source-only/\1/' target/linux/airoha/image/an7581.mk || true
-          echo 'CONFIG_TARGET_IMAGES_GZIP=y' >> .config
-          echo 'CONFIG_TARGET_ROOTFS_SQUASHFS=y' >> .config
-          echo 'CONFIG_CCACHE=y' >> .config
+      # 24.10 中不需要 sed 移除 source-only，设备默认生成镜像
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -88,8 +82,6 @@ jobs:
         run: |
           echo "===== Target Configuration ====="
           grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
-          echo "===== source-only status ====="
-          grep "nokia-xg-040g-md" target/linux/airoha/image/an7581.mk || echo "source-only removed"
 
       - name: Download all sources
         working-directory: openwrt
@@ -127,7 +119,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-nokia-xg140gmd-firmware-23.05
+          name: openwrt-nokia-xg140gmd-firmware-24.10
           path: openwrt/artifacts/
           retention-days: 7
 
@@ -135,17 +127,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-23.05
+          name: build-logs-24.10
           path: |
             openwrt/logs/
             openwrt/.config
-            openwrt/target/linux/airoha/image/an7581.mk
           retention-days: 7
-
-      - name: Collect logs on failure
-        if: failure()
-        working-directory: openwrt
-        run: |
-          mkdir -p logs
-          find . -name "*.log" -exec cp {} logs/ \; 2>/dev/null || true
-          cp .config logs/config.txt || true
