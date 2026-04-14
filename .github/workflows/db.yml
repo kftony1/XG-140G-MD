@@ -6,8 +6,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set variables
         run: |
@@ -17,24 +16,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential clang flex bison g++-multilib gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1-dev file wget
+          sudo apt install -y build-essential clang flex bison g++-multilib gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
 
-      - name: Clone source code
-        run: |
-          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
+      - name: Clone source
+        run: git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
 
-      - name: Update feeds first
+      - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Write custom files
+      - name: Apply custom config files
         run: |
           cd openwrt
-          mkdir -p files/etc/config
-          cat > files/etc/config/network <<'EOF'
-config interface 'loopback'
+          mkdir -p files/etc/config files/etc/board.d
+          echo "config interface 'loopback'
     option ifname 'lo'
     option proto 'static'
     option ipaddr '127.0.0.1'
@@ -53,44 +50,38 @@ config interface 'wan'
 
 config interface 'wan6'
     option ifname 'lan1'
-    option proto 'dhcpv6'
-EOF
+    option proto 'dhcpv6'" > files/etc/config/network
 
-          mkdir -p files/etc
-          cat > files/etc/shadow <<'EOF'
-root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+          echo "root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
 daemon:*:0:0:99999:7:::
 ftp:*:0:0:99999:7:::
-nobody:*:0:0:99999:7:::
-EOF
+nobody:*:0:0:99999:7:::" > files/etc/shadow
 
-          mkdir -p files/etc/board.d
-          cat > files/etc/board.d/01_override_model <<'EOF'
-#!/bin/sh
-echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
-echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
-EOF
+          echo "#!/bin/sh
+echo \"airoha,an7581-nokia-xg-140g-md\" > /tmp/sysinfo/board_name
+echo \"Nokia XG-140G-MD\" > /tmp/sysinfo/model" > files/etc/board.d/01_override_model
+
           chmod +x files/etc/board.d/01_override_model
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: Apply your .config
+      - name: Load .config
         run: |
           cp -f config/.config openwrt/.config
           cd openwrt
           make defconfig
 
-      - name: Download dependencies
+      - name: Download sources
         run: |
           cd openwrt
           make download -j1 V=s
 
-      - name: Compile (STABLE SINGLE THREAD)
+      - name: Build firmware
         run: |
           cd openwrt
           make -j1 V=s 2>&1 | tee build.log
 
-      - name: Upload full log
+      - name: Upload log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
