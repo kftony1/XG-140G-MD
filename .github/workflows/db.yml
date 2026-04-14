@@ -9,35 +9,39 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Set variables
+        run: |
+          echo "REPO_URL=https://github.com/Ansuel/openwrt" >> $GITHUB_ENV
+          echo "REPO_BRANCH=openwrt-24.10-airoha-an7581-stable" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
           gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
 
-      # ✅ 修复：正确分支 an7581
-      - name: Clone Ansuel an7581 source
-        run: git clone --depth=1 https://github.com/Ansuel/openwrt -b an7581 openwrt
+      - name: Clone source code
+        run: |
+          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
 
       - name: Run custom.sh
         run: |
           chmod +x custom.sh
           ./custom.sh
 
-      # ✅ 使用你仓库 config/.config
-      - name: Apply .config
+      - name: Apply your config/.config
         run: |
           cp -f config/.config openwrt/.config
           cd openwrt
           make defconfig
 
-      - name: Update feeds
+      - name: Update feeds (use source default)
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Defconfig (keep kernel same)
+      - name: Final defconfig (keep kernel consistent)
         run: |
           cd openwrt
           make defconfig
@@ -47,21 +51,18 @@ jobs:
           cd openwrt
           make download -j$(nproc)
 
-      # ✅ 日志绝对不截断（直接写入文件）
-      - name: Build (Full log NO TRUNCATE)
+      - name: Build (NO TRUNCATE LOG)
         run: |
           cd openwrt
           make -j$(nproc) V=s > build.log 2>&1
 
-      # ✅ 上传完整日志
-      - name: Upload full log
+      - name: Upload full build log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
           compression-level: 1
 
-      # ✅ 上传固件
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
