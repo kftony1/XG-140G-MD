@@ -56,66 +56,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dl-${{ env.OPENWRT_VERSION }}-
 
-      - name: Install dependencies (full build environment)
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            asciidoc \
-            bash \
-            bc \
-            binutils \
-            bison \
             build-essential \
-            bzip2 \
-            ccache \
-            clang \
-            coreutils \
-            cpio \
-            diffstat \
-            docker.io \
-            fastjar \
             flex \
+            bison \
             g++ \
             gawk \
-            gcc \
+            gcc-multilib \
+            g++-multilib \
             gettext \
             git \
-            java-propose-classpath \
-            kmod \
-            libc6 \
-            libc6-dev \
+            libncurses-dev \
+            libssl-dev \
+            python3-distutils \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            ccache \
+            time \
+            bc \
+            cpio \
+            perl-modules \
+            python3 \
+            python3-pip \
+            patch \
             libelf-dev \
             liblzma-dev \
-            libncurses-dev \
-            libncurses5-dev \
-            libssl-dev \
-            locales \
-            make \
-            mkisofs \
-            nano \
-            ncurses-dev \
-            openssl \
-            patch \
-            perl-modules \
-            pkgconf \
-            python3 \
-            python3-distutils \
-            python3-pip \
-            python3-venv \
-            python2.7-dev \
-            rsync \
-            ruby \
-            ruby-dev \
-            sdcc \
-            subversion \
-            swig \
-            time \
-            uglifyjs \
-            unzip \
-            upx \
-            wget \
-            xsltproc \
-            zlib1g-dev
+            locales
 
       - name: Update feeds
         working-directory: openwrt
