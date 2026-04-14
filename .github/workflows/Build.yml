@@ -86,7 +86,6 @@ jobs:
             libelf-dev \
             liblzma-dev \
             locales
-          # 注意：libipc-cmd-perl 已移除，因为 FORCE=1 跳过依赖检查
 
       - name: Update feeds
         working-directory: openwrt
@@ -97,7 +96,7 @@ jobs:
       - name: Validate and expand .config (force)
         working-directory: openwrt
         run: |
-          make defconfig FORCE=1
+          FORCE=1 make defconfig
           echo "✅ defconfig completed"
 
       - name: Show target summary
@@ -108,7 +107,7 @@ jobs:
 
       - name: Download all sources (force)
         working-directory: openwrt
-        run: make download -j$(nproc) FORCE=1
+        run: FORCE=1 make download -j$(nproc)
 
       - name: Compile firmware (force)
         working-directory: openwrt
@@ -117,7 +116,7 @@ jobs:
           PATH: "/usr/lib/ccache:$PATH"
         run: |
           echo "Starting compilation at $(date)"
-          make -j$(nproc) V=s FORCE=1
+          FORCE=1 make -j$(nproc) V=s
           echo "Compilation finished at $(date)"
 
       - name: Prepare artifacts
