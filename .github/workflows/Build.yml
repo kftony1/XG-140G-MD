@@ -12,7 +12,6 @@ jobs:
     timeout-minutes: 300
     env:
       OPENWRT_VERSION: "openwrt-24.10"
-      REPO_URL: https://github.com/immortalwrt/immortalwrt.git
 
     steps:
       - name: Checkout ImmortalWrt source
@@ -38,7 +37,7 @@ jobs:
         run: |
           echo "===== First 10 lines of .config ====="
           head -10 .config
-          grep -q "CONFIG_TARGET_airoha" .config && echo "✅ airoha target found" || echo "⚠️ airoha target not set, but continuing"
+          grep -q "CONFIG_TARGET_airoha" .config && echo "✅ airoha target found" || echo "⚠️ airoha target not set"
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -86,7 +85,8 @@ jobs:
             patch \
             libelf-dev \
             liblzma-dev \
-            locales
+            locales \
+            libipc-cmd-perl
 
       - name: Update feeds
         working-directory: openwrt
@@ -94,10 +94,10 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Validate and expand .config
+      - name: Validate and expand .config (force)
         working-directory: openwrt
         run: |
-          make defconfig
+          make defconfig FORCE=1
           echo "✅ defconfig completed"
 
       - name: Show target summary
@@ -106,18 +106,18 @@ jobs:
           echo "===== Target Configuration ====="
           grep -E "^CONFIG_TARGET_(airoha|BOARD|DEVICE)" .config
 
-      - name: Download all sources
+      - name: Download all sources (force)
         working-directory: openwrt
-        run: make download -j$(nproc)
+        run: make download -j$(nproc) FORCE=1
 
-      - name: Compile firmware
+      - name: Compile firmware (force)
         working-directory: openwrt
         env:
           CCACHE_DIR: ~/.ccache
           PATH: "/usr/lib/ccache:$PATH"
         run: |
           echo "Starting compilation at $(date)"
-          make -j$(nproc) V=s
+          make -j$(nproc) V=s FORCE=1
           echo "Compilation finished at $(date)"
 
       - name: Prepare artifacts
