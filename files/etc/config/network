@@ -14,7 +14,7 @@ config device
 config interface 'wan'
         option device 'lan1'
         option proto 'dhcp'
-        option proto 'pppoe' 
+      
 
 # LAN口桥接 LAN2、LAN3、LAN4
 config device
