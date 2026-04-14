@@ -1,18 +1,7 @@
-name: Build_XG-040G-MD_AN7581-BIN
+name: Build_XG-040G-MD_AN7581
 
 on:
   workflow_dispatch:
-    inputs:
-      openwrt_repo:
-        description: 'OpenWrt 源码仓库'
-        required: true
-        default: 'https://github.com/Ansuel/openwrt.git'
-        type: string
-      openwrt_branch:
-        description: 'OpenWrt 分支'
-        required: true
-        default: 'openwrt-24.10-airoha-an7581-stable'
-        type: string
 
 env:
   TZ: Asia/Shanghai
@@ -41,25 +30,27 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev libelf-dev wget curl jq qemu-utils device-tree-compiler
 
-      - name: 安装CMake
+      - name: 克隆 Ansuel AN7581 源码 (24.10 稳定版)
         run: |
-          wget -q https://github.com/Kitware/CMake/releases/download/v3.31.5/cmake-3.31.5-linux-x86_64.tar.gz
-          tar xf cmake-3.31.5-linux-x86_64.tar.gz
-          sudo cp -rf cmake-3.31.5-linux-x86_64/{bin,share} /usr/
-          cmake --version
+          git clone --depth 1 https://github.com/Ansuel/openwrt.git -b openwrt-24.10-airoha-an7581-stable openwrt
 
-      - name: 克隆OpenWrt源码
+      - name: 替换为 ImmortalWrt 24.10 匹配 feeds
         run: |
-          git clone --depth 1 ${{ github.event.inputs.openwrt_repo }} -b ${{ github.event.inputs.openwrt_branch }} openwrt
           cd openwrt
-          echo "src-git packages https://github.com/immortalwrt/packages.git;master" > feeds.conf
-          echo "src-git luci https://github.com/immortalwrt/luci.git;master" >> feeds.conf
-          echo "src-git routing https://github.com/openwrt/routing.git;master" >> feeds.conf
-          echo "src-git telephony https://github.com/openwrt/telephony.git;master" >> feeds.conf
+          cat > feeds.conf <<EOF
+          src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10
+          src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10
+          src-git routing https://github.com/immortalwrt/routing.git;openwrt-24.10
+          src-git telephony https://github.com/immortalwrt/telephony.git;openwrt-24.10
+          EOF
+
+      - name: 更新 feeds 并安装软件包
+        run: |
+          cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 写入network和shadow配置
+      - name: 写入 network & shadow 配置
         run: |
           cd openwrt
           mkdir -p files/etc/config
@@ -85,104 +76,149 @@ jobs:
           echo "    option proto 'dhcpv6'" >> files/etc/config/network
           echo "root:\$1\$WnUqCk5R\$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::" > files/etc/shadow
           echo "daemon:*:0:0:99999:7:::" >> files/etc/shadow
-          echo "ftp:*:0:0:99999:7:::" >> files/etc/shadow
-          echo "nobody:*:0:0:99999:7:::" >> files/etc/shadow
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-      - name: 写入完整.config（强制生成BIN固件）
+      - name: 写入完整 .config (已修复 生成固件)
         run: |
           cd openwrt
-          echo "CONFIG_TARGET_airoha=y" > .config
-          echo "CONFIG_TARGET_airoha_an7581=y" >> .config
-          echo "# CONFIG_TARGET_MULTI_PROFILE is not set" >> .config
-          echo "CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md=y" >> .config
-          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=512" >> .config
-          echo "CONFIG_TARGET_ROOTFS_INITRAMFS=y" >> .config
-          echo "CONFIG_VMLINUX=y" >> .config
-          echo "CONFIG_DTS_I2C=y" >> .config
-          echo "CONFIG_BUSYBOX_CONFIG_FEATURE_TOP_SMP_CPU=y" >> .config
-          echo "CONFIG_BUSYBOX_CONFIG_PASSWD=y" >> .config
-          echo "CONFIG_TARGET_INIT_PATH=\"/usr/sbin:/usr/bin:/sbin:/bin\"" >> .config
-          echo "CONFIG_TARGET_PREINIT_SUPPRESS_FAILSAFE_NETWORK=y" >> .config
-          echo "CONFIG_TARGET_OPTIMIZATION=\"-Os -pipe -march=armv8-a+crc+crypto -mcpu=cortex-a53\"" >> .config
-          echo "CONFIG_USE_MUSL=y" >> .config
-          echo "CONFIG_CCACHE=y" >> .config
-          echo "CONFIG_STRIP_KERNEL_EXPORTS=y" >> .config
-          echo "CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256" >> .config
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_PACKAGE_luci-base=y" >> .config
-          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-          echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
-          echo "CONFIG_PACKAGE_opkg=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-opkg=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-quickstart=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-wdt-en7581=y" >> .config
-          echo "CONFIG_WATCHDOG=y" >> .config
-          echo "CONFIG_WATCHDOG_CORE=y" >> .config
-          echo "CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-airoha-eth=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-phy-en8811h=y" >> .config
-          echo "CONFIG_PACKAGE_airoha-en8811h-firmware=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-airoha-npu=y" >> .config
-          echo "CONFIG_PACKAGE_airoha-npu-firmware=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-mtd-spi-nand=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-spi-airoha-snfi=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-spi-nor=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-hwmon-airoha=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-thermal-airoha=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-reset-airoha=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-gpio-button-hotplug=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-leds-airoha=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-cpufreq-en7581=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-pcie-airoha=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb2=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb3=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb-storage=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb-ehci=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-phy-airoha-usb=y" >> .config
-          echo "CONFIG_PACKAGE_block-mount=y" >> .config
-          echo "CONFIG_KERNEL_MTD=y" >> .config
-          echo "CONFIG_KERNEL_MTD_PARTS=y" >> .config
-          echo "CONFIG_KERNEL_MTD_BLOCK=y" >> .config
-          echo "CONFIG_KERNEL_MTD_CHAR=y" >> .config
-          echo "CONFIG_KERNEL_MTD_SPI_NOR=y" >> .config
-          echo "CONFIG_KERNEL_SPI_MASTER=y" >> .config
-          echo "CONFIG_PACKAGE_mtd-utils=y" >> .config
-          echo "CONFIG_PACKAGE_ubi-utils=y" >> .config
-          echo "CONFIG_PACKAGE_firewall4=y" >> .config
-          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
-          echo "CONFIG_PACKAGE_odhcpd=y" >> .config
-          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
-          echo "CONFIG_PACKAGE_ppp=y" >> .config
-          echo "CONFIG_PACKAGE_ppp-mod-pppoe=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-ppp=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-pppoe=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-pppox=y" >> .config
-          echo "CONFIG_PACKAGE_chrony=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-ipt-fullconenat=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-ipt-offload=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nf-flow=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-offload=y" >> .config
-          echo "CONFIG_PACKAGE_ethtool=y" >> .config
-          echo "CONFIG_KERNEL_NFT_FLOW_OFFLOAD=y" >> .config
-          echo "CONFIG_KERNEL_TCP_CONG_BBR=y" >> .config
-          echo "CONFIG_KERNEL_DEFAULT_TCP_CONG=\"bbr\"" >> .config
-          echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
-          echo "CONFIG_PACKAGE_iptables-mod-tproxy=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-8021q=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-bridge=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-br-netfilter=y" >> .config
-          echo "CONFIG_KERNEL_NET_VENDOR_MEDIATEK=n" >> .config
-          echo "CONFIG_KERNEL_NET_VENDOR_REALTEK=n" >> .config
-          echo "CONFIG_KERNEL_NET_VENDOR_SYNOPSYS=n" >> .config
-          echo "CONFIG_KERNEL_NET_SWITCHDEV=y" >> .config
-          echo "CONFIG_KERNEL_IPV6=y" >> .config
-          echo "CONFIG_KERNEL_BRIDGE_VLAN_FILTERING=y" >> .config
-          echo "CONFIG_PACKAGE_dropbear=y" >> .config
-          echo "CONFIG_DROPBEAR_CURVE25519=y" >> .config
+          cat > .config <<'EOF'
+# ===================== 设备目标 =====================
+CONFIG_TARGET_airoha=y
+CONFIG_TARGET_airoha_an7581=y
+# CONFIG_TARGET_MULTI_PROFILE is not set
+CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md=y
+CONFIG_TARGET_ROOTFS_PARTSIZE=512
+
+# ===================== 基础系统 =====================
+CONFIG_BUSYBOX_CONFIG_FEATURE_TOP_SMP_CPU=y
+CONFIG_BUSYBOX_CONFIG_PASSWD=y
+CONFIG_TARGET_INIT_PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+CONFIG_TARGET_PREINIT_SUPPRESS_FAILSAFE_NETWORK=y
+
+# ===================== 优化配置 =====================
+CONFIG_TARGET_OPTIMIZATION="-Os -pipe -march=armv8-a+crc+crypto -mcpu=cortex-a53"
+CONFIG_USE_MUSL=y
+CONFIG_CCACHE=y
+CONFIG_STRIP_KERNEL_EXPORTS=y
+CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
+
+# ===================== LuCI 中文界面 =====================
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_LUCI_LANG_zh_Hans=y
+
+# ===================== LuCI 主题 (Argon) =====================
+CONFIG_PACKAGE_luci-theme-argon=y
+
+# ===================== 终端 (ttyd) =====================
+CONFIG_PACKAGE_luci-app-ttyd=y
+
+# ===================== 软件包管理界面 =====================
+CONFIG_PACKAGE_opkg=y
+CONFIG_PACKAGE_luci-app-opkg=y
+
+# ===================== 网络向导 =====================
+CONFIG_PACKAGE_luci-app-quickstart=y
+
+# ===================== 禁用有问题的包 =====================
+# CONFIG_PACKAGE_rpcd-mod-luci is not set
+# CONFIG_PACKAGE_rpcd-mod-rrdns is not set
+
+# ===================== 看门狗支持 =====================
+CONFIG_PACKAGE_kmod-wdt-en7581=y
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_CORE=y
+CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
+
+# ===================== AN7581 核心驱动 =====================
+CONFIG_PACKAGE_kmod-airoha-eth=y
+CONFIG_PACKAGE_kmod-phy-en8811h=y
+CONFIG_PACKAGE_airoha-en8811h-firmware=y
+CONFIG_PACKAGE_kmod-airoha-npu=y
+CONFIG_PACKAGE_airoha-npu-firmware=y
+CONFIG_PACKAGE_kmod-mtd-spi-nand=y
+CONFIG_PACKAGE_kmod-spi-airoha-snfi=y
+CONFIG_PACKAGE_kmod-spi-nor=y
+CONFIG_PACKAGE_kmod-hwmon-airoha=y
+CONFIG_PACKAGE_kmod-thermal-airoha=y
+CONFIG_PACKAGE_kmod-reset-airoha=y
+CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
+CONFIG_PACKAGE_kmod-leds-airoha=y
+CONFIG_PACKAGE_kmod-cpufreq-en7581=y
+CONFIG_PACKAGE_kmod-pcie-airoha=y
+
+# ===================== USB 支持 =====================
+CONFIG_PACKAGE_kmod-usb2=y
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-ehci=y
+CONFIG_PACKAGE_kmod-phy-airoha-usb=y
+CONFIG_PACKAGE_block-mount=y
+
+# ===================== Flash 与 MTD =====================
+CONFIG_KERNEL_MTD=y
+CONFIG_KERNEL_MTD_PARTS=y
+CONFIG_KERNEL_MTD_BLOCK=y
+CONFIG_KERNEL_MTD_CHAR=y
+CONFIG_KERNEL_MTD_SPI_NOR=y
+CONFIG_KERNEL_SPI_MASTER=y
+CONFIG_PACKAGE_mtd-utils=y
+CONFIG_PACKAGE_ubi-utils=y
+
+# ===================== 网络基础 =====================
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_odhcpd=y
+CONFIG_PACKAGE_odhcp6c=y
+
+# ===================== PPPoE 拨号支持 =====================
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_kmod-ppp=y
+CONFIG_PACKAGE_kmod-pppoe=y
+CONFIG_PACKAGE_kmod-pppox=y
+
+# ===================== 时间同步 =====================
+CONFIG_PACKAGE_chrony=y
+
+# ===================== 网络加速 =====================
+CONFIG_PACKAGE_kmod-ipt-fullconenat=y
+CONFIG_PACKAGE_kmod-ipt-offload=y
+CONFIG_PACKAGE_kmod-nf-flow=y
+CONFIG_PACKAGE_kmod-nft-offload=y
+CONFIG_PACKAGE_ethtool=y
+CONFIG_KERNEL_NFT_FLOW_OFFLOAD=y
+
+# ===================== TCP 优化 =====================
+CONFIG_KERNEL_TCP_CONG_BBR=y
+CONFIG_KERNEL_DEFAULT_TCP_CONG="bbr"
+
+# ===================== 科学上网内核依赖 =====================
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_iptables-mod-tproxy=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+
+# ===================== VLAN / 桥接支持 =====================
+CONFIG_PACKAGE_kmod-8021q=y
+CONFIG_PACKAGE_kmod-bridge=y
+CONFIG_PACKAGE_kmod-br-netfilter=y
+
+# ===================== 内核网络选项 =====================
+CONFIG_KERNEL_NET_VENDOR_MEDIATEK=n
+# CONFIG_NET_VENDOR_MEDIATEK is not set
+CONFIG_KERNEL_NET_VENDOR_REALTEK=n
+# CONFIG_NET_VENDOR_REALTEK is not set
+CONFIG_KERNEL_NET_VENDOR_SYNOPSYS=n
+# CONFIG_NET_VENDOR_SYNOPSYS is not set
+CONFIG_KERNEL_NET_SWITCHDEV=y
+CONFIG_KERNEL_IPV6=y
+CONFIG_KERNEL_BRIDGE_VLAN_FILTERING=y
+
+# ===================== SSH 配置 =====================
+CONFIG_PACKAGE_dropbear=y
+CONFIG_DROPBEAR_CURVE25519=y
+EOF
           make defconfig
 
       - name: 下载依赖
@@ -193,17 +229,17 @@ jobs:
       - name: 开始编译固件
         run: |
           cd openwrt
-          script -q -c "make -j$(nproc) V=s 2>&1" build.log
+          make -j$(nproc) V=s 2>&1
         shell: bash
 
-      - name: 上传完整编译日志
+      - name: 上传编译日志
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
 
-      - name: 上传固件文件
+      - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: XG-040G-MD_Firmware_BIN
+          name: XG-040G-MD_Firmware
           path: openwrt/bin/targets/airoha/
