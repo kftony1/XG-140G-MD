@@ -23,98 +23,95 @@ jobs:
         run: |
           git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
 
-      - name: Run custom.sh
-        run: |
-          chmod +x custom.sh
-          ./custom.sh
+      # ==============================
+      # 已删除：chmod +x custom.sh （彻底去掉老脚本）
+      # ==============================
 
-      - name: 写入自定义 network / shadow / 型号名称
+      - name: 写入自定义固件配置 network / shadow / 型号
         run: |
           cd openwrt
           mkdir -p files/etc/config
           cat > files/etc/config/network <<'EOF'
-          config interface 'loopback'
-              option ifname 'lo'
-              option proto 'static'
-              option ipaddr '127.0.0.1'
-              option netmask '255.0.0.0'
+config interface 'loopback'
+    option ifname 'lo'
+    option proto 'static'
+    option ipaddr '127.0.0.1'
+    option netmask 255.0.0.0
 
-          config interface 'lan'
-              option ifname 'eth0'
-              option proto 'static'
-              option ipaddr '192.168.1.1'
-              option netmask '255.255.255.0'
-              option ip6assign '60'
+config interface 'lan'
+    option ifname 'eth0'
+    option proto 'static'
+    option ipaddr 192.168.1.1
+    option netmask 255.255.255.0
+    option ip6assign 60
 
-          config interface 'wan'
-              option ifname 'lan1'
-              option proto 'dhcp'
+config interface 'wan'
+    option ifname 'lan1'
+    option proto 'dhcp'
 
-          config interface 'wan6'
-              option ifname 'lan1'
-              option proto 'dhcpv6'
-          EOF
+config interface 'wan6'
+    option ifname 'lan1'
+    option proto 'dhcpv6'
+EOF
 
           mkdir -p files/etc/
           cat > files/etc/shadow <<'EOF'
-          root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
-          daemon:*:0:0:99999:7:::
-          ftp:*:0:0:99999:7:::
-          nobody:*:0:0:99999:7:::
-          EOF
+root:$1$WnUqCk5R$CvC8R.pJH5tT9qkO7xN5d/:0:0:99999:7:::
+daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+EOF
 
           mkdir -p files/etc/board.d/
           cat > files/etc/board.d/01_override_model <<'EOF'
-          #!/bin/sh
-          echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
-          echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
-          EOF
+#!/bin/sh
+echo "airoha,an7581-nokia-xg-140g-md" > /tmp/sysinfo/board_name
+echo "Nokia XG-140G-MD" > /tmp/sysinfo/model
+EOF
           chmod +x files/etc/board.d/01_override_model
 
           chmod 644 files/etc/config/network
           chmod 600 files/etc/shadow
 
-          echo ">>> 自定义配置完成！"
+          echo ">>> 自定义配置写入完成"
 
-      - name: Apply config/.config
+      - name: 应用 config/.config
         run: |
           cp -f config/.config openwrt/.config
           cd openwrt
           make defconfig
 
-      - name: Update feeds (source default)
+      - name: Update feeds (默认源码自带)
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Final defconfig (keep kernel consistent)
+      - name: 保持内核版本一致
         run: |
           cd openwrt
           make defconfig
 
-      - name: Download dependencies
+      - name: 下载依赖
         run: |
           cd openwrt
           make download -j$(nproc)
 
-      - name: Build (NO TRUNCATE LOG)
+      - name: 编译（日志永不截断）
         run: |
           cd openwrt
           make -j$(nproc) V=s > build.log 2>&1
 
-      - name: Upload full build log
+      - name: 上传完整日志
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
           compression-level: 1
-          overwrite: true
 
-      - name: Upload firmware
+      - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware
           path: openwrt/bin/targets/*/*
           compression-level: 1
-          overwrite: true
