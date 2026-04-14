@@ -85,8 +85,8 @@ jobs:
             patch \
             libelf-dev \
             liblzma-dev \
-            locales \
-            libipc-cmd-perl
+            locales
+          # 注意：libipc-cmd-perl 已移除，因为 FORCE=1 跳过依赖检查
 
       - name: Update feeds
         working-directory: openwrt
