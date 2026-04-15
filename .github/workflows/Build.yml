@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: 检出仓库配置
         uses: actions/checkout@v4
+        with:
+          path: repo
 
       - name: 安装编译依赖
         run: |
@@ -27,10 +29,10 @@ jobs:
       - name: 写入配置文件
         run: |
           cd openwrt
-          cat ../config/.config > .config
+          cp ../repo/config/.config .config
           mkdir -p files/etc/config
-          cat ../files/etc/config/network > files/etc/config/network
-          cat ../files/etc/shadow > files/etc/shadow
+          cp ../repo/files/etc/config/network files/etc/config/network
+          cp ../repo/files/etc/shadow files/etc/shadow
 
       - name: 更新 feeds 并生成配置
         run: |
