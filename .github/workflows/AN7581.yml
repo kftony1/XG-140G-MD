@@ -1,4 +1,4 @@
-name: Ansuel OpenWrt - AN7581 完整固件（含自定义文件）
+name: Build OpenWrt 25.12.2 for AN7581 (Ansuel)
 on:
   workflow_dispatch:
 
@@ -8,7 +8,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 检出仓库所有配置（含 .config + files）
+      - name: 检出仓库配置
         uses: actions/checkout@v4
         with:
           path: repo
@@ -16,23 +16,34 @@ jobs:
       - name: 安装编译依赖
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential libncurses-dev flex bison gawk git python3 libelf-dev libssl-dev
+          sudo apt install -y build-essential libncurses-dev flex bison gawk git \
+          python3 libelf-dev libssl-dev swig python3-setuptools
 
-      - name: 拉取 Ansuel 官方 OpenWrt 仓库
+      - name: 克隆 OpenWrt 25.12.2 源码
         run: |
-          git clone --depth=1 https://github.com/Ansuel/openwrt.git openwrt
+          # 1. 直接克隆官方 25.12.2 稳定版源码
+          git clone --depth=1 -b v25.12.2 https://github.com/openwrt/openwrt.git openwrt
 
-      - name: 应用 .config 配置
+      - name: 添加 Ansuel 的 AN7581 专项支持
+        run: |
+          cd openwrt
+          # 2. 合并 Ansuel 为 25.12 分支维护的最新驱动（这是关键步骤）
+          git remote add ansuel https://github.com/Ansuel/openwrt.git
+          git fetch ansuel main-airoha-6.12
+          git merge --no-edit ansuel/main-airoha-6.12
+
+      - name: 应用 .config 配置文件
         run: |
           cd openwrt
           cp ../repo/config/.config .config
           make defconfig
 
-      - name: 复制所有自定义文件（network / shadow / 全部）
+      - name: 复制所有自定义文件
         run: |
           cd openwrt
           mkdir -p files/
           cp -r ../repo/files/* files/
+          echo "=== 自定义文件列表 ==="
           ls -la files/
 
       - name: 更新 feeds
@@ -41,20 +52,22 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 下载依赖
+      - name: 下载源码包
         run: |
           cd openwrt
           make download -j4 V=s
 
-      - name: 单线程编译（防 Error 255）
+      - name: 开始编译固件
         run: |
           cd openwrt
+          # 使用单线程编译，稳定优先
           make -j1 V=s 2>&1 | tee build.log
 
-      - name: 上传固件 + 日志
+      - name: 上传编译产物
         uses: actions/upload-artifact@v4
+        if: always()  # 无论成败都上传日志，方便排错
         with:
-          name: Ansuel-AN7581-完整固件
+          name: OpenWrt-25.12.2-AN7581-Firmware
           path: |
             openwrt/bin/targets/airoha/an7581/*.bin
             openwrt/build.log
