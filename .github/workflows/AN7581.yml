@@ -1,4 +1,4 @@
-name: ImmortalWrt 24.10 开发版 AN7581
+name: Ansuel OpenWrt - AN7581 完整固件（含自定义文件）
 on:
   workflow_dispatch:
 
@@ -8,25 +8,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 检出配置
+      - name: 检出仓库所有配置（含 .config + files）
         uses: actions/checkout@v4
         with:
           path: repo
 
-      - name: 安装依赖
+      - name: 安装编译依赖
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential libncurses-dev flex bison gawk git python3
+          sudo apt install -y build-essential libncurses-dev flex bison gawk git python3 libelf-dev libssl-dev
 
-      - name: 拉取官方开发版
+      - name: 拉取 Ansuel 官方 OpenWrt 仓库
         run: |
-          git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git -b main openwrt
+          git clone --depth=1 https://github.com/Ansuel/openwrt.git openwrt
 
-      - name: 应用配置
+      - name: 应用 .config 配置
         run: |
           cd openwrt
           cp ../repo/config/.config .config
           make defconfig
+
+      - name: 复制所有自定义文件（network / shadow / 全部）
+        run: |
+          cd openwrt
+          mkdir -p files/
+          cp -r ../repo/files/* files/
+          ls -la files/
 
       - name: 更新 feeds
         run: |
@@ -35,15 +42,20 @@ jobs:
           ./scripts/feeds install -a
 
       - name: 下载依赖
-        run: cd openwrt && make download -j4 V=s
+        run: |
+          cd openwrt
+          make download -j4 V=s
 
-      - name: 编译（单线程避免报错）
-        run: cd openwrt && make -j1 V=s 2>&1 | tee build.log
+      - name: 单线程编译（防 Error 255）
+        run: |
+          cd openwrt
+          make -j1 V=s 2>&1 | tee build.log
 
-      - name: 上传固件
+      - name: 上传固件 + 日志
         uses: actions/upload-artifact@v4
         with:
-          name: AN7581-Firmware
+          name: Ansuel-AN7581-完整固件
           path: |
             openwrt/bin/targets/airoha/an7581/*.bin
             openwrt/build.log
+          retention-days: 30
