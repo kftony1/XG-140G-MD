@@ -27,7 +27,7 @@ jobs:
         run: |
           cd openwrt
           
-          # 复制原始配置
+          # 从仓库根目录复制 .config
           cp ../repo/.config .config
           
           echo "=== 原始设备配置 ==="
@@ -36,7 +36,7 @@ jobs:
           # 删除废弃包
           sed -i '/CONFIG_PACKAGE_luci-mod-admin-full/d' .config
           
-          # 修正设备配置（使用行首锚定，避免替换注释）
+          # 修正设备配置
           sed -i 's/^CONFIG_TARGET_DEVICE_airoha_an7581.*/CONFIG_TARGET_DEVICE_airoha_an7581_nokia-valyrian=y/' .config
           sed -i 's/^CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581.*/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_nokia-valyrian=""/' .config
           sed -i 's/^CONFIG_TARGET_BOARD=.*/CONFIG_TARGET_BOARD="an7581"/' .config
@@ -45,14 +45,13 @@ jobs:
           echo "=== 修正后的设备配置 ==="
           grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config
           
-          # 展开配置
           make defconfig
           
           echo ""
           echo "=== defconfig 后的设备配置 ==="
-          grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config || echo "❌ 设备配置已丢失，将使用通用配置"
+          grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config || echo "❌ 设备配置已丢失"
           
-          # 如果设备配置丢失，回退到 EVB 通用配置
+          # 自动回退到 EVB
           if ! grep -q "CONFIG_TARGET_DEVICE_airoha_an7581_" .config; then
             echo "⚠️ 回退到 EVB 通用配置"
             echo "CONFIG_TARGET_DEVICE_airoha_an7581_evb=y" >> .config
