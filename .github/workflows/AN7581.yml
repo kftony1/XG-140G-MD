@@ -26,20 +26,39 @@ jobs:
       - name: 应用并修正 .config 配置
         run: |
           cd openwrt
-          # 复制你的原始配置
+          
+          # 复制原始配置
           cp ../repo/.config .config
           
-          # 删除废弃的包
+          echo "=== 原始设备配置 ==="
+          grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config || echo "⚠️ 未找到原始设备配置"
+          
+          # 删除废弃包
           sed -i '/CONFIG_PACKAGE_luci-mod-admin-full/d' .config
           
-          # 明确修正为 Nokia Valyrian 设备（XG-040G-MD / XG-140G-MD）
-          sed -i 's/CONFIG_TARGET_DEVICE_airoha_an7581.*/CONFIG_TARGET_DEVICE_airoha_an7581_nokia-valyrian=y/' .config
-          sed -i 's/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581.*/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_nokia-valyrian=""/' .config
+          # 修正设备配置（使用行首锚定，避免替换注释）
+          sed -i 's/^CONFIG_TARGET_DEVICE_airoha_an7581.*/CONFIG_TARGET_DEVICE_airoha_an7581_nokia-valyrian=y/' .config
+          sed -i 's/^CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581.*/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_nokia-valyrian=""/' .config
+          sed -i 's/^CONFIG_TARGET_BOARD=.*/CONFIG_TARGET_BOARD="an7581"/' .config
           
+          echo ""
+          echo "=== 修正后的设备配置 ==="
+          grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config
+          
+          # 展开配置
           make defconfig
           
-          echo "=== 当前设备配置 ==="
-          grep "CONFIG_TARGET_DEVICE" .config
+          echo ""
+          echo "=== defconfig 后的设备配置 ==="
+          grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config || echo "❌ 设备配置已丢失，将使用通用配置"
+          
+          # 如果设备配置丢失，回退到 EVB 通用配置
+          if ! grep -q "CONFIG_TARGET_DEVICE_airoha_an7581_" .config; then
+            echo "⚠️ 回退到 EVB 通用配置"
+            echo "CONFIG_TARGET_DEVICE_airoha_an7581_evb=y" >> .config
+            echo "CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_evb=\"\"" >> .config
+            make defconfig
+          fi
 
       - name: 复制所有自定义文件
         run: |
@@ -80,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenWrt-AN7581-Nokia-Valyrian
+          name: OpenWrt-AN7581-Firmware
           path: |
             openwrt/bin/targets/airoha/an7581/*.bin
             openwrt/build.log
