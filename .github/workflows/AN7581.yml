@@ -1,0 +1,61 @@
+name: ImmortalWrt Ansuel 分支 - AN7581 纯有线编译
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 检出仓库配置
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt update -y
+          sudo apt install -y build-essential libncurses-dev flex bison gawk git curl python3 python3-pyelftools
+          sudo timedatectl set-timezone Asia/Shanghai
+
+      - name: 拉取 Ansuel 分支源码（支持 AN7581 最新）
+        run: |
+          git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git -b ansuel openwrt
+
+      - name: 写入配置文件
+        run: |
+          cd openwrt
+          cp ../repo/config/.config .config
+          mkdir -p files/etc/config
+          cp ../repo/files/etc/config/network files/etc/config/network
+          cp ../repo/files/etc/shadow files/etc/shadow
+
+      - name: 更新 feeds 并生成配置
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+
+      - name: 下载编译依赖
+        run: |
+          cd openwrt
+          make download -j$(nproc) V=s
+
+      - name: 开始编译（完整日志不截断）
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s 2>&1 | tee build.log
+
+      - name: 上传固件 + 完整日志
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-Ansuel-AN7581-固件+日志
+          path: |
+            openwrt/bin/targets/airoha/an7581/*.bin
+            openwrt/build.log
+          retention-days: 30
