@@ -1,4 +1,4 @@
-name: Build OpenWrt for AN7581 (Ansuel)
+name: Build OpenWrt for AN7581 (Nokia Valyrian)
 on:
   workflow_dispatch:
 
@@ -23,16 +23,7 @@ jobs:
         run: |
           git clone --depth=1 -b main-airoha-6.12 https://github.com/Ansuel/openwrt.git openwrt
 
-      - name: 查看源码支持的 AN7581 设备列表
-        run: |
-          cd openwrt
-          echo "=== 源码中可用的 AN7581 设备配置文件 ==="
-          ls -1 target/linux/airoha/an7581/base-files/etc/board.d/ 2>/dev/null || echo "未找到"
-          echo ""
-          echo "=== 可用的设备树文件 (.dts) ==="
-          ls -1 target/linux/airoha/dts/ 2>/dev/null | grep -E "\.dts$" || echo "未找到"
-
-      - name: 应用并自动修正 .config 配置
+      - name: 应用并修正 .config 配置
         run: |
           cd openwrt
           # 复制你的原始配置
@@ -41,17 +32,14 @@ jobs:
           # 删除废弃的包
           sed -i '/CONFIG_PACKAGE_luci-mod-admin-full/d' .config
           
-          # 检查源码中实际存在的设备配置名
-          DEVICE_NAME=$(grep -o "nokia-xg-040g-md\|evb" .config 2>/dev/null | head -1)
-          
-          # 如果 .config 中指定了 nokia-xg-040g-md，但源码中不存在，则回退到通用配置
-          if ! grep -q "CONFIG_TARGET_DEVICE_airoha_an7581_nokia-xg-040g-md=y" target/linux/airoha/an7581/target.mk 2>/dev/null; then
-            echo "⚠️ 警告：源码中未找到 nokia-xg-040g-md 设备配置，将使用通用 AN7581 配置"
-            sed -i 's/CONFIG_TARGET_DEVICE_airoha_an7581_nokia-xg-040g-md=y/# CONFIG_TARGET_DEVICE_airoha_an7581_nokia-xg-040g-md is not set/g' .config
-            echo "CONFIG_TARGET_DEVICE_airoha_an7581_evb=y" >> .config
-          fi
+          # 明确修正为 Nokia Valyrian 设备（XG-040G-MD / XG-140G-MD）
+          sed -i 's/CONFIG_TARGET_DEVICE_airoha_an7581.*/CONFIG_TARGET_DEVICE_airoha_an7581_nokia-valyrian=y/' .config
+          sed -i 's/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581.*/CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_nokia-valyrian=""/' .config
           
           make defconfig
+          
+          echo "=== 当前设备配置 ==="
+          grep "CONFIG_TARGET_DEVICE" .config
 
       - name: 复制所有自定义文件
         run: |
@@ -86,13 +74,13 @@ jobs:
         run: |
           cd openwrt
           echo "=== 生成的固件文件 ==="
-          find bin/targets/airoha/an7581/ -type f -name "*.bin" -exec ls -lh {} \; 2>/dev/null || echo "未找到固件文件"
+          find bin/targets/airoha/an7581/ -type f -name "*.bin" -exec ls -lh {} \; 2>/dev/null || echo "❌ 未找到固件文件"
 
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenWrt-AN7581-Firmware
+          name: OpenWrt-AN7581-Nokia-Valyrian
           path: |
             openwrt/bin/targets/airoha/an7581/*.bin
             openwrt/build.log
