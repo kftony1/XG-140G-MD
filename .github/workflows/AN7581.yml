@@ -1,4 +1,4 @@
-name: Build OpenWrt 25.12.2 for AN7581 (Ansuel)
+name: Build OpenWrt for AN7581 (Ansuel)
 on:
   workflow_dispatch:
 
@@ -21,22 +21,31 @@ jobs:
 
       - name: 克隆 Ansuel 的 AN7581 专用源码
         run: |
-          # 直接使用 Ansuel 为 AN7581 维护的开发分支
           git clone --depth=1 -b main-airoha-6.12 https://github.com/Ansuel/openwrt.git openwrt
 
       - name: 应用 .config 配置文件
         run: |
           cd openwrt
-          cp ../repo/config/.config .config
+          # 从仓库根目录复制 .config（适配你当前的结构）
+          cp ../repo/.config .config
+          # 删除废弃的 luci-mod-admin-full 配置项
+          sed -i '/CONFIG_PACKAGE_luci-mod-admin-full/d' .config
           make defconfig
 
       - name: 复制所有自定义文件
         run: |
           cd openwrt
           mkdir -p files/
-          cp -r ../repo/files/* files/
+          # 从仓库根目录的 files 文件夹复制（如果有的话）
+          if [ -d ../repo/files ]; then
+            cp -r ../repo/files/* files/
+          fi
+          # 如果 config 目录下有预置文件，也一并复制
+          if [ -d ../repo/config ]; then
+            cp -r ../repo/config/* files/etc/ 2>/dev/null || true
+          fi
           echo "=== 自定义文件列表 ==="
-          ls -la files/
+          find files -type f 2>/dev/null | head -20
 
       - name: 更新 feeds
         run: |
@@ -52,7 +61,6 @@ jobs:
       - name: 开始编译固件
         run: |
           cd openwrt
-          # 使用单线程编译，稳定优先
           make -j1 V=s 2>&1 | tee build.log
 
       - name: 上传编译产物
