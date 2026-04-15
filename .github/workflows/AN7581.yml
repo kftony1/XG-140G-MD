@@ -19,18 +19,10 @@ jobs:
           sudo apt install -y build-essential libncurses-dev flex bison gawk git \
           python3 libelf-dev libssl-dev swig python3-setuptools
 
-      - name: 克隆 OpenWrt 25.12.2 源码
+      - name: 克隆 Ansuel 的 AN7581 专用源码
         run: |
-          # 1. 直接克隆官方 25.12.2 稳定版源码
-          git clone --depth=1 -b v25.12.2 https://github.com/openwrt/openwrt.git openwrt
-
-      - name: 添加 Ansuel 的 AN7581 专项支持
-        run: |
-          cd openwrt
-          # 2. 合并 Ansuel 为 25.12 分支维护的最新驱动（这是关键步骤）
-          git remote add ansuel https://github.com/Ansuel/openwrt.git
-          git fetch ansuel main-airoha-6.12
-          git merge --no-edit ansuel/main-airoha-6.12
+          # 直接使用 Ansuel 为 AN7581 维护的开发分支
+          git clone --depth=1 -b main-airoha-6.12 https://github.com/Ansuel/openwrt.git openwrt
 
       - name: 应用 .config 配置文件
         run: |
@@ -65,9 +57,9 @@ jobs:
 
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
-        if: always()  # 无论成败都上传日志，方便排错
+        if: always()
         with:
-          name: OpenWrt-25.12.2-AN7581-Firmware
+          name: OpenWrt-AN7581-Firmware
           path: |
             openwrt/bin/targets/airoha/an7581/*.bin
             openwrt/build.log
