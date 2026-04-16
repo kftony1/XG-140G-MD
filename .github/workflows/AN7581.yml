@@ -94,12 +94,14 @@ jobs:
           echo "=== 生成的固件文件 ==="
           find bin/targets/airoha/an7581/ -type f -name "*.bin" -exec ls -lh {} \; 2>/dev/null || echo "❌ 未找到固件文件"
 
+      # 👇 只有这里我改了，其余完全和你原来一模一样
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: OpenWrt-AN7581-Firmware
           path: |
-            openwrt/bin/targets/airoha/an7581/*.bin
+            openwrt/bin/targets/airoha/an7581/*squashfs-sysupgrade.bin
+            openwrt/bin/targets/airoha/an7581/*squashfs-factory.bin
             openwrt/build.log
           retention-days: 30
