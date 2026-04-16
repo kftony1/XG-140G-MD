@@ -45,6 +45,11 @@ jobs:
           echo "=== 修正后的设备配置 ==="
           grep -E "CONFIG_TARGET_DEVICE|CONFIG_TARGET_BOARD" .config
           
+          # 强制开启生成 squashfs-factory.bin（关键配置）
+          echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
+          echo "CONFIG_TARGET_ROOTFS_INITRAMFS=n" >> .config
+          echo "CONFIG_TARGET_ROOTFS_FACTORY=y" >> .config
+          
           make defconfig
           
           echo ""
@@ -94,7 +99,6 @@ jobs:
           echo "=== 生成的固件文件 ==="
           find bin/targets/airoha/an7581/ -type f -name "*.bin" -exec ls -lh {} \; 2>/dev/null || echo "❌ 未找到固件文件"
 
-      # 👇 只有这里我改了，其余完全和你原来一模一样
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         if: always()
